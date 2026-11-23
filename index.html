@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador de memoria · Asignación contigua simple</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f3f5f8; --surface:#ffffff; --surface-2:#eef1f5; --text:#141a24; --muted:#586374;
+  --border:#d6dbe3; --accent:#1f5fbf; --accent-contrast:#ffffff;
+  --ok:#14773a; --warn:#9a5b00; --danger:#c0262d; --so:#445168;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0e1319; --surface:#161c25; --surface-2:#1d2530; --text:#e7ebf1; --muted:#9ba6b6;
+    --border:#2a3441; --accent:#6c9bff; --accent-contrast:#0a1020;
+    --ok:#4cc27a; --warn:#f0b34a; --danger:#ff8080; --so:#5d6c85;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#0e1319; --surface:#161c25; --surface-2:#1d2530; --text:#e7ebf1; --muted:#9ba6b6;
+  --border:#2a3441; --accent:#6c9bff; --accent-contrast:#0a1020;
+  --ok:#4cc27a; --warn:#f0b34a; --danger:#ff8080; --so:#5d6c85;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left))}
+.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+h1{font-size:1.5rem;line-height:1.2;margin:0}
+.sub{margin:4px 0 0;color:var(--muted);font-size:.95rem}
+h2{font-size:1.05rem;margin:0 0 12px;line-height:1.3}
+h3{font-size:.95rem;margin:0 0 8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
+.layout{display:grid;gap:0 16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1000px){.layout{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* controles */
+input,select,button{font:inherit;color:inherit}
+input,select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}
+input:disabled,select:disabled{opacity:.55;cursor:not-allowed;background:var(--surface-2)}
+input[aria-invalid="true"]{border-color:var(--danger)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-height:40px;cursor:pointer;font-weight:550}
+.btn:hover:not(:disabled){border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+.btn.small{min-height:32px;padding:4px 10px;font-size:.88rem}
+.btn.danger{color:var(--danger)}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:8px 14px;min-height:40px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-contrast)}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label,.lbl{font-size:.85rem;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.row.tight{gap:8px}
+.inline{display:flex;gap:6px}
+.note{margin:10px 0 0;padding:8px 12px;border-radius:8px;background:var(--surface-2);font-size:.92rem;border-left:4px solid var(--muted)}
+.note.ok{border-left-color:var(--ok)}
+.note.warn{border-left-color:var(--warn)}
+.err{color:var(--danger);font-size:.9rem;margin:6px 0 0;min-height:1.3em}
+
+/* estadísticas */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0 0}
+.stat{background:var(--surface-2);border-radius:10px;padding:10px 12px;margin:0}
+.stat dt{font-size:.78rem;color:var(--muted)}
+.stat dd{margin:2px 0 0;font-weight:650;font-size:1.1rem;font-variant-numeric:tabular-nums}
+
+/* tabla */
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:.93rem}
+th{font-size:.78rem;color:var(--muted);text-align:left;font-weight:600;padding:8px 8px;background:var(--surface-2);white-space:nowrap}
+td{padding:6px 8px;border-top:1px solid var(--border);vertical-align:middle}
+tr.is-running td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.in-name{width:104px}
+.in-num{width:92px}
+.empty{color:var(--muted);text-align:center;padding:18px 8px}
+.hint{display:block;font-size:.76rem;color:var(--warn);line-height:1.25;max-width:160px}
+.namecell{display:flex;align-items:center;gap:6px}
+.dot{width:12px;height:12px;border-radius:50%;flex:none;background:hsl(var(--h,210) 65% 38%)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.8rem;font-weight:600;white-space:nowrap;
+  color:var(--muted);background:color-mix(in srgb,currentColor 14%,transparent)}
+.st-listo{color:var(--warn)} .st-ejecucion{color:var(--accent)} .st-terminado{color:var(--ok)} .st-rechazado{color:var(--danger)}
+.addrow{margin-top:12px}
+
+/* mapa de memoria */
+.memwrap{display:grid;grid-template-columns:minmax(200px,270px) minmax(0,1fr);gap:16px}
+@media (max-width:620px){.memwrap{grid-template-columns:minmax(0,1fr)}}
+.mem{display:flex;flex-direction:column;min-height:430px;border:2px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
+.seg-row{flex:1 1 0;min-height:48px;display:flex;border-bottom:1px solid var(--border)}
+.addr{width:74px;flex:none;font-size:.74rem;color:var(--muted);text-align:right;padding:4px 8px 4px 4px;border-right:1px solid var(--border);font-variant-numeric:tabular-nums}
+.blk{flex:1;min-width:0;padding:6px 10px;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
+.blk strong{font-size:.92rem;overflow-wrap:anywhere}
+.bsub{font-size:.78rem;opacity:.9}
+.blk.so{background:var(--so);color:#fff}
+.blk.proc{background:hsl(var(--h) 65% 38%);color:#fff}
+.blk.free{background:repeating-linear-gradient(45deg,transparent 0 8px,color-mix(in srgb,var(--muted) 14%,transparent) 8px 16px)}
+.blk.frag{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--warn) 24%,transparent) 0 8px,transparent 8px 16px);border-top:2px dashed var(--warn)}
+.seg-end{display:flex;height:26px}
+.seg-end .blk{padding:2px 10px;font-size:.78rem;color:var(--muted);justify-content:center}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:.93rem}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+
+/* tablero de estados */
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:720px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.bcol{background:var(--surface-2);border-radius:10px;padding:10px;min-height:96px}
+.bcol ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.chip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:.88rem}
+.chip .csize{color:var(--muted);font-size:.8rem;margin-left:auto}
+.chip.rej{border-color:var(--danger)}
+.chip .rejtxt{color:var(--danger);font-size:.78rem;width:100%}
+.chip .bar{width:100%}
+.bar{height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:var(--p,0%)}
+.li-empty{color:var(--muted);font-size:.85rem}
+
+/* bitácora */
+.log{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--border);font-size:.9rem}
+.log:first-child{border-top:0}
+.lt{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;min-width:3.2em}
+.log.ok .lm{color:var(--ok)} .log.warn .lm{color:var(--warn)} .log.err .lm{color:var(--danger)}
+#logList{list-style:none;margin:0;padding:0;max-height:280px;overflow-y:auto}
+
+details.help summary{cursor:pointer;font-weight:600}
+details.help ul{margin:10px 0 0;padding-left:20px}
+details.help li{margin:4px 0}
+.mode{display:flex;gap:14px;flex-wrap:wrap}
+.mode label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.mode input{min-height:0}
+footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
+</style>
+</head>
+<body>
+<noscript><p style="padding:16px">Este simulador necesita JavaScript activado.</p></noscript>
+<div class="wrap">
+
+<header class="top">
+  <div>
+    <h1>Simulador de memoria: asignación contigua simple</h1>
+    <p class="sub">Monoprogramación: SO + una sola partición de usuario. Sistemas Operativos.</p>
+  </div>
+  <div class="seg" role="group" aria-label="Tema de color">
+    <button type="button" data-theme-btn="light" aria-pressed="true">Claro</button>
+    <button type="button" data-theme-btn="dark" aria-pressed="false">Oscuro</button>
+  </div>
+</header>
+
+<details class="card help">
+  <summary>¿Cómo funciona la asignación contigua simple?</summary>
+  <ul>
+    <li>La RAM se divide en dos zonas: el <strong>sistema operativo</strong> y <strong>una única partición de usuario</strong>.</li>
+    <li>Solo un programa de usuario está en memoria a la vez. Los demás esperan en la cola (estado <em>Listo</em>).</li>
+    <li>El programa ocupa un bloque contiguo. Lo que sobra de la partición es <strong>fragmentación interna</strong>: está libre pero nadie más puede usarlo.</li>
+    <li>Si un programa es más grande que la partición, no se puede ejecutar y queda <em>Rechazada</em>. Se resuelve con más RAM (usa la calculadora) o con otras técnicas (overlays, memoria virtual).</li>
+    <li>Los registros <strong>base</strong> y <strong>límite</strong> protegen al SO: el programa solo puede acceder a direcciones entre base y base + límite.</li>
+    <li>Estados del proceso: <em>Nuevo</em> → <em>Listo</em> (cola de espera) → <em>En ejecución</em> → <em>Terminado</em>.</li>
+  </ul>
+</details>
+
+<div class="layout">
+<div class="col">
+
+  <!-- 1. RAM -->
+  <section class="card" aria-labelledby="h-ram">
+    <h2 id="h-ram">1. Memoria RAM y calculadora</h2>
+    <div class="row">
+      <div class="field">
+        <label for="ramVal">Tamaño de la RAM</label>
+        <div class="inline">
+          <input id="ramVal" type="number" min="1" step="any" value="64" inputmode="decimal" style="width:110px">
+          <select id="ramUnit" aria-label="Unidad de la RAM">
+            <option value="KB" selected>KB</option><option value="MB">MB</option><option value="GB">GB</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="osVal">Tamaño del SO (KB)</label>
+        <input id="osVal" type="number" min="1" step="1" value="10" inputmode="numeric" style="width:110px">
+      </div>
+      <button type="button" class="btn" id="applyRec">Usar RAM recomendada</button>
+    </div>
+    <p class="err" id="cfgErr" role="alert"></p>
+    <p class="note" id="cfgLock" hidden>Hay un programa en memoria: la RAM y el SO no se pueden cambiar hasta que termine.</p>
+    <dl class="stats">
+      <div class="stat"><dt>Partición de usuario</dt><dd id="cUser">—</dd></div>
+      <div class="stat"><dt>Tarea mayor</dt><dd id="cMax">—</dd></div>
+      <div class="stat"><dt>RAM mínima (SO + mayor)</dt><dd id="cMin">—</dd></div>
+      <div class="stat"><dt>RAM recomendada</dt><dd id="cRec">—</dd></div>
+      <div class="stat"><dt>Suma de tareas</dt><dd id="cSum">—</dd></div>
+    </dl>
+    <p class="note" id="ramMsg" role="status"></p>
+  </section>
+
+  <!-- 2. Tareas -->
+  <section class="card" aria-labelledby="h-tasks">
+    <h2 id="h-tasks">2. Tabla de tareas</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th scope="col">Elegir</th><th scope="col">Tarea</th><th scope="col">Tamaño (KB)</th>
+          <th scope="col">Duración (u.t.)</th><th scope="col">Estado</th><th scope="col">Restante</th><th scope="col"><span class="sr-only">Acciones</span></th>
+        </tr></thead>
+        <tbody id="taskBody"></tbody>
+      </table>
+    </div>
+    <form id="addForm" class="row addrow" autocomplete="off">
+      <div class="field"><label for="addName">Nombre (opcional)</label><input id="addName" type="text" maxlength="20" style="width:130px"></div>
+      <div class="field"><label for="addSize">Tamaño (KB)</label><input id="addSize" type="number" min="1" step="1" required inputmode="numeric" style="width:110px"></div>
+      <div class="field"><label for="addBurst">Duración (u.t.)</label><input id="addBurst" type="number" min="1" max="999" step="1" value="3" required inputmode="numeric" style="width:100px"></div>
+      <button type="submit" class="btn primary">Agregar tarea</button>
+    </form>
+    <p class="err" id="addErr" role="alert"></p>
+    <div class="row tight">
+      <button type="button" class="btn small" id="ex1">Ejemplo S5</button>
+      <button type="button" class="btn small" id="ex2">Ejemplo con tarea rechazada</button>
+      <button type="button" class="btn small danger" id="clearAll">Vaciar tabla</button>
+    </div>
+  </section>
+
+  <!-- 3. Control -->
+  <section class="card" aria-labelledby="h-ctrl">
+    <h2 id="h-ctrl">3. Selector y ejecución</h2>
+    <div class="row">
+      <div class="field" style="flex:1 1 220px">
+        <label for="taskSelect">Selector de tareas</label>
+        <select id="taskSelect"></select>
+      </div>
+      <button type="button" class="btn" id="admitBtn">Admitir a la cola</button>
+      <button type="button" class="btn primary" id="loadBtn">Cargar en memoria</button>
+      <button type="button" class="btn" id="admitAllBtn">Admitir todas</button>
+    </div>
+    <p class="lbl" style="margin:14px 0 6px">Modo de planificación</p>
+    <div class="mode" role="radiogroup" aria-label="Modo de planificación">
+      <label><input type="radio" name="mode" value="auto" checked> Automático (primero en llegar, primero en ejecutarse)</label>
+      <label><input type="radio" name="mode" value="manual"> Manual (tú eliges con el selector)</label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button type="button" class="btn primary" id="playBtn">Iniciar</button>
+      <button type="button" class="btn" id="stepBtn">Avanzar 1 u.t.</button>
+      <button type="button" class="btn" id="resetBtn">Reiniciar simulación</button>
+      <div class="field">
+        <label for="speed">Velocidad</label>
+        <input id="speed" type="range" min="1" max="5" step="1" value="3" style="min-height:0;padding:0">
+      </div>
+    </div>
+  </section>
+
+</div>
+<div class="col">
+
+  <!-- 4. Memoria -->
+  <section class="card" aria-labelledby="h-mem">
+    <h2 id="h-mem">4. Mapa de la memoria</h2>
+    <div class="memwrap">
+      <div class="mem" id="memMap" role="group" aria-label="Mapa de memoria con direcciones en KB"></div>
+      <div>
+        <h3>Registros de protección</h3>
+        <dl class="kv">
+          <dt>Registro base</dt><dd id="iBase">—</dd>
+          <dt>Registro límite</dt><dd id="iLimit">—</dd>
+          <dt>Direcciones válidas</dt><dd id="iRange">—</dd>
+          <dt>Programa en memoria</dt><dd id="iProc">Ninguno</dd>
+          <dt>Fragmentación interna</dt><dd id="iFrag">—</dd>
+          <dt>Uso de la partición</dt><dd id="iUse">—</dd>
+        </dl>
+        <p class="note">Un acceso fuera del rango válido genera una interrupción y el SO termina el programa.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Estados -->
+  <section class="card" aria-labelledby="h-board">
+    <h2 id="h-board">5. Estados del proceso y cola de espera</h2>
+    <div class="board">
+      <div class="bcol"><h3>Nuevo</h3><ul id="lNuevo"></ul></div>
+      <div class="bcol"><h3>Listo (cola de espera)</h3><ul id="lListo"></ul></div>
+      <div class="bcol"><h3>En ejecución</h3><ul id="lRun"></ul></div>
+      <div class="bcol"><h3>Terminado / rechazado</h3><ul id="lDone"></ul></div>
+    </div>
+  </section>
+
+  <!-- 6. Métricas -->
+  <section class="card" aria-labelledby="h-met">
+    <h2 id="h-met">6. Métricas</h2>
+    <dl class="stats" style="margin-top:0">
+      <div class="stat"><dt>Tiempo</dt><dd id="mTime">0 u.t.</dd></div>
+      <div class="stat"><dt>Terminadas</dt><dd id="mDone">0 / 0</dd></div>
+      <div class="stat"><dt>Rechazadas</dt><dd id="mRej">0</dd></div>
+      <div class="stat"><dt>Espera promedio</dt><dd id="mWait">—</dd></div>
+      <div class="stat"><dt>Retorno promedio</dt><dd id="mTurn">—</dd></div>
+      <div class="stat"><dt>RAM ocupada</dt><dd id="mUse">—</dd></div>
+    </dl>
+  </section>
+
+  <!-- 7. Bitácora -->
+  <section class="card" aria-labelledby="h-log">
+    <h2 id="h-log">7. Bitácora</h2>
+    <ol id="logList" role="log" aria-live="polite" aria-label="Eventos de la simulación"></ol>
+  </section>
+
+</div>
+</div>
+<footer>Simulador didáctico. u.t. = unidades de tiempo. Las tareas se atienden por orden de llegada a la cola.</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var MAX_KB = 64 * 1024 * 1024;       // 64 GB expresados en KB
+  var MAX_TASKS = 20, MAX_BURST = 999;
+  var UNITS = { KB: 1, MB: 1024, GB: 1048576 };
+  var HUES = [212, 152, 282, 22, 340, 182, 252, 112];
+  var LABEL = { nuevo: 'Nuevo', listo: 'Listo (en cola)', ejecucion: 'En ejecución', terminado: 'Terminado', rechazado: 'Rechazada' };
+  var SPEEDS = [1500, 1000, 700, 400, 200];
+
+  var S = { ramKB: 64, osKB: 10, tasks: [], queue: [], running: null, time: 0,
+            mode: 'auto', timer: null, selected: null, log: [], seq: 0, uid: 0 };
+  var rows = new Map();
+  var selSig = '';
+
+  /* ---------- utilidades (todo el contenido de usuario entra por textContent) ---------- */
+  function el(tag, props) {
+    var n = document.createElement(tag);
+    var p = props || {};
+    Object.keys(p).forEach(function (k) {
+      var v = p[k];
+      if (v === false || v == null) return;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k === 'vars') Object.keys(v).forEach(function (a) { n.style.setProperty(a, String(v[a])); });
+      else if (k === 'value' || k === 'checked' || k === 'disabled') n[k] = v;
+      else if (k.indexOf('on') === 0) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : String(v));
+    });
+    for (var i = 2; i < arguments.length; i++) {
+      var c = arguments[i];
+      if (c != null && c !== false) n.append(c);
+    }
+    return n;
+  }
+  function clampInt(v, min, max, fb) {
+    var n = Math.floor(Number(v));
+    if (!Number.isFinite(n)) return fb;
+    return Math.min(max, Math.max(min, n));
+  }
+  function num(n) { return (Math.round(n * 100) / 100).toLocaleString('es-PE'); }
+  function fmt(kb) {
+    if (kb >= 1048576) return num(kb / 1048576) + ' GB';
+    if (kb >= 1024) return num(kb / 1024) + ' MB';
+    return num(kb) + ' KB';
+  }
+  function cleanName(s) { return String(s || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 20); }
+  function byId(id) { return S.tasks.find(function (t) { return t.id === id; }) || null; }
+  function userArea() { return S.ramKB - S.osKB; }
+  function fits(t) { return t.size <= userArea(); }
+  function defaultName() { var i = S.seq; return i < 26 ? String.fromCharCode(65 + i) : 'T' + (i + 1); }
+
+  function log(msg, kind) {
+    S.log.push({ t: S.time, msg: msg, kind: kind || 'info' });
+    if (S.log.length > 300) S.log.shift();
+  }
+
+  /* ---------- modelo ---------- */
+  function addTask(name, size, burst) {
+    var t = { id: ++S.uid, name: cleanName(name) || defaultName(), size: size, burst: burst, remaining: burst,
+              status: 'nuevo', admitT: null, startT: null, endT: null, hue: HUES[S.seq % HUES.length] };
+    S.seq++;
+    S.tasks.push(t);
+    return t;
+  }
+
+  function admit(t) {
+    if (!t || t.status !== 'nuevo') return false;
+    if (!fits(t)) {
+      t.status = 'rechazado';
+      log('La tarea ' + t.name + ' (' + fmt(t.size) + ') no cabe en la partición de usuario (' + fmt(userArea()) + '). Rechazada.', 'err');
+      return false;
+    }
+    t.status = 'listo'; t.admitT = S.time; S.queue.push(t.id);
+    log('La tarea ' + t.name + ' pasa de Nuevo a Listo y espera en la cola.', 'info');
+    return true;
+  }
+
+  function load(t) {
+    if (!t) return false;
+    if (S.running !== null) {
+      var cur = byId(S.running);
+      if (t.status === 'nuevo') admit(t);
+      log('Memoria ocupada por ' + (cur ? cur.name : 'otro programa') + ': en contigua simple solo cabe un programa de usuario. ' + t.name + ' espera en la cola.', 'warn');
+      return false;
+    }
+    if (t.status === 'nuevo' && !admit(t)) return false;
+    if (t.status !== 'listo') return false;
+    S.queue = S.queue.filter(function (id) { return id !== t.id; });
+    t.status = 'ejecucion'; t.startT = S.time; S.running = t.id;
+    log(t.name + ' se carga en memoria (base ' + fmt(S.osKB) + ', límite ' + fmt(t.size) + '). Estado: En ejecución.', 'ok');
+    return true;
+  }
+
+  function revalidate() {
+    var ua = userArea();
+    S.tasks.forEach(function (t) {
+      if (t.status === 'listo' && t.size > ua) {
+        t.status = 'rechazado';
+        S.queue = S.queue.filter(function (id) { return id !== t.id; });
+        log(t.name + ' ya no cabe con la nueva configuración y sale de la cola (Rechazada).', 'err');
+      } else if (t.status === 'rechazado' && t.size <= ua) {
+        t.status = 'nuevo';
+        log(t.name + ' ahora cabe en la partición y vuelve a Nuevo.', 'info');
+      }
+    });
+  }
+
+  function step() {
+    if (S.running === null && S.mode === 'auto' && !S.queue.length) {
+      var nuevos = S.tasks.filter(function (t) { return t.status === 'nuevo'; });
+      if (nuevos.length) {
+        log('Modo automático: se admiten las tareas nuevas a la cola, en orden de la tabla.', 'info');
+        nuevos.forEach(admit);
+      }
+    }
+    if (S.running === null && S.mode === 'auto' && S.queue.length) load(byId(S.queue[0]));
+
+    var run = S.running !== null ? byId(S.running) : null;
+    if (!run) {
+      pause();
+      var pend = S.tasks.filter(function (t) { return t.status === 'nuevo' || t.status === 'listo'; });
+      if (!S.tasks.length) log('Agrega tareas a la tabla para simular.', 'info');
+      else if (!pend.length) log('Simulación completada: no quedan tareas por ejecutar.', 'ok');
+      else log('Memoria libre. Elige una tarea en el selector y pulsa «Cargar en memoria».', 'info');
+      renderDynamic();
+      return false;
+    }
+    S.time++; run.remaining--;
+    if (run.remaining <= 0) {
+      run.remaining = 0; run.status = 'terminado'; run.endT = S.time; S.running = null;
+      log(run.name + ' terminó (Terminado). Memoria de usuario liberada.', 'ok');
+      if (S.mode === 'auto' && S.queue.length) load(byId(S.queue[0]));
+    }
+    renderDynamic();
+    return true;
+  }
+
+  function play() {
+    if (S.timer) return;
+    S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 700);
+    renderControls();
+    step();
+  }
+  function pause() {
+    if (S.timer) { clearInterval(S.timer); S.timer = null; }
+    renderControls();
+  }
+
+  function resetSim() {
+    pause();
+    S.time = 0; S.queue = []; S.running = null; S.log = [];
+    S.tasks.forEach(function (t) {
+      t.status = 'nuevo'; t.remaining = t.burst; t.admitT = t.startT = t.endT = null;
+    });
+    revalidate();
+    log('Simulación reiniciada. Todas las tareas vuelven a Nuevo.', 'info');
+    renderAll();
+  }
+
+  function loadExample(key) {
+    var ex = {
+      s5: { ram: 64, os: 10, tasks: [['A', 8, 4], ['B', 15, 3], ['C', 18, 5], ['D', 6, 2]], msg: 'Ejemplo S5 cargado: RAM 64 KB, SO 10 KB.' },
+      rej: { ram: 32, os: 8, tasks: [['A', 10, 3], ['B', 30, 2], ['C', 20, 4], ['D', 24, 2]], msg: 'Ejemplo con rechazo cargado: B (30 KB) no cabe en la partición de 24 KB.' }
+    }[key];
+    pause();
+    S.ramKB = ex.ram; S.osKB = ex.os;
+    $('ramVal').value = ex.ram; $('ramUnit').value = 'KB'; $('osVal').value = ex.os; $('cfgErr').textContent = '';
+    S.tasks = []; S.queue = []; S.running = null; S.time = 0; S.seq = 0; S.uid = 0; S.selected = null; S.log = [];
+    ex.tasks.forEach(function (r) { addTask(r[0], r[1], r[2]); });
+    log(ex.msg, 'info');
+    renderAll();
+  }
+
+  /* ---------- configuración de RAM ---------- */
+  function applyConfig() {
+    var unit = UNITS[$('ramUnit').value] || 1;
+    var ram = Math.round(Number($('ramVal').value) * unit);
+    var os = Math.round(Number($('osVal').value));
+    var err = '';
+    if (!Number.isFinite(ram) || ram < 2 || ram > MAX_KB) err = 'La RAM debe estar entre 2 KB y 64 GB.';
+    else if (!Number.isFinite(os) || os < 1) err = 'El tamaño del SO debe ser de al menos 1 KB.';
+    else if (os >= ram) err = 'El SO debe ser menor que la RAM total para dejar espacio al usuario.';
+    $('ramVal').setAttribute('aria-invalid', String(!!err));
+    $('osVal').setAttribute('aria-invalid', String(!!err));
+    $('cfgErr').textContent = err;
+    if (err) return;
+    if (ram === S.ramKB && os === S.osKB) return;
+    S.ramKB = ram; S.osKB = os;
+    revalidate();
+    renderAll();
+  }
+
+  /* ---------- render ---------- */
+  function renderConfig() {
+    var ua = userArea();
+    var has = S.tasks.length > 0;
+    var max = S.tasks.reduce(function (m, t) { return Math.max(m, t.size); }, 0);
+    var sum = S.tasks.reduce(function (s, t) { return s + t.size; }, 0);
+    var min = S.osKB + max;
+    var rec = 8; while (rec < min) rec *= 2;
+    $('cUser').textContent = fmt(ua);
+    $('cMax').textContent = has ? fmt(max) : '—';
+    $('cMin').textContent = has ? fmt(min) : '—';
+    $('cRec').textContent = has ? (rec > MAX_KB ? 'Más de 64 GB' : fmt(rec)) : '—';
+    $('cSum').textContent = has ? fmt(sum) : '—';
+    var m = $('ramMsg');
+    if (!has) { m.className = 'note'; m.textContent = 'Agrega tareas para calcular la RAM que necesitas.'; }
+    else if (S.ramKB < min) {
+      m.className = 'note warn';
+      m.textContent = 'La RAM actual (' + fmt(S.ramKB) + ') no alcanza: el SO (' + fmt(S.osKB) + ') más la tarea mayor (' + fmt(max) + ') necesitan al menos ' + fmt(min) + '.';
+    } else {
+      m.className = 'note ok';
+      m.textContent = 'La RAM actual alcanza para ejecutar todas las tareas, una a la vez. Sobran ' + fmt(S.ramKB - min) + ' sobre el mínimo.';
+    }
+    var locked = S.running !== null;
+    ['ramVal', 'ramUnit', 'osVal'].forEach(function (id) { $(id).disabled = locked; });
+    $('cfgLock').hidden = !locked;
+    $('applyRec').disabled = locked || !has || rec > MAX_KB || rec === S.ramKB;
+    $('applyRec').dataset.rec = String(rec);
+  }
+
+  function updateRow(t) {
+    var r = rows.get(t.id);
+    if (!r) return;
+    var editable = t.status === 'nuevo' || t.status === 'rechazado';
+    r.nameIn.disabled = r.sizeIn.disabled = r.burstIn.disabled = !editable;
+    r.badge.className = 'badge st-' + t.status;
+    r.badge.textContent = LABEL[t.status];
+    r.rem.textContent = t.status === 'rechazado' ? '—' : t.remaining + ' / ' + t.burst;
+    r.radio.disabled = !(t.status === 'nuevo' || t.status === 'listo');
+    r.radio.checked = S.selected === t.id;
+    r.del.disabled = t.status === 'ejecucion';
+    r.tr.className = t.status === 'ejecucion' ? 'is-running' : '';
+    r.hint.textContent = (editable && !fits(t)) ? 'Excede la partición (' + fmt(userArea()) + ')' : '';
+  }
+
+  function buildRow(t, i) {
+    var radio = el('input', { type: 'radio', name: 'taskSel', value: t.id, 'aria-label': 'Elegir la tarea ' + (i + 1),
+      onchange: function () { S.selected = t.id; renderSelect(); } });
+    var nameIn = el('input', { type: 'text', maxlength: 20, value: t.name, class: 'in-name', 'aria-label': 'Nombre de la tarea ' + (i + 1),
+      onchange: function () { t.name = cleanName(nameIn.value) || t.name; nameIn.value = t.name; renderDynamic(); } });
+    var sizeIn = el('input', { type: 'number', min: 1, max: MAX_KB, step: 1, value: t.size, class: 'in-num', inputmode: 'numeric', 'aria-label': 'Tamaño en KB de la tarea ' + (i + 1),
+      onchange: function () {
+        t.size = clampInt(sizeIn.value, 1, MAX_KB, t.size); sizeIn.value = t.size;
+        if (t.status === 'rechazado' && fits(t)) { t.status = 'nuevo'; log(t.name + ' ahora cabe en la partición y vuelve a Nuevo.', 'info'); }
+        updateRow(t); renderConfig(); renderSelect(); renderLog();
+      } });
+    var burstIn = el('input', { type: 'number', min: 1, max: MAX_BURST, step: 1, value: t.burst, class: 'in-num', inputmode: 'numeric', 'aria-label': 'Duración de la tarea ' + (i + 1),
+      onchange: function () {
+        t.burst = clampInt(burstIn.value, 1, MAX_BURST, t.burst); burstIn.value = t.burst; t.remaining = t.burst;
+        updateRow(t);
+      } });
+    var badge = el('span', { class: 'badge' });
+    var rem = el('span', { class: 'rem' });
+    var hint = el('span', { class: 'hint' });
+    var del = el('button', { type: 'button', class: 'btn small danger', text: 'Quitar', 'aria-label': 'Quitar la tarea ' + (i + 1),
+      onclick: function () {
+        S.tasks = S.tasks.filter(function (x) { return x !== t; });
+        S.queue = S.queue.filter(function (id) { return id !== t.id; });
+        if (S.selected === t.id) S.selected = null;
+        log('Tarea ' + t.name + ' eliminada de la tabla.', 'info');
+        renderAll();
+      } });
+    var tr = el('tr', {},
+      el('td', {}, radio),
+      el('td', {}, el('div', { class: 'namecell' }, el('span', { class: 'dot', vars: { '--h': t.hue } }), nameIn)),
+      el('td', {}, sizeIn, hint),
+      el('td', {}, burstIn),
+      el('td', {}, badge),
+      el('td', {}, rem),
+      el('td', {}, del));
+    rows.set(t.id, { tr: tr, radio: radio, nameIn: nameIn, sizeIn: sizeIn, burstIn: burstIn, badge: badge, rem: rem, hint: hint, del: del });
+    return tr;
+  }
+
+  function renderTasks() {
+    var tb = $('taskBody');
+    tb.replaceChildren(); rows.clear();
+    if (!S.tasks.length) {
+      tb.append(el('tr', {}, el('td', { colspan: 7, class: 'empty', text: 'Sin tareas. Agrega una o carga un ejemplo.' })));
+      return;
+    }
+    S.tasks.forEach(function (t, i) { tb.append(buildRow(t, i)); });
+    S.tasks.forEach(updateRow);
+  }
+
+  function renderSelect() {
+    var sel = $('taskSelect');
+    var avail = S.tasks.filter(function (t) { return t.status === 'nuevo' || t.status === 'listo'; });
+    var sig = avail.map(function (t) { return [t.id, t.name, t.size, t.status].join(':'); }).join('|');
+    if (sig !== selSig) {
+      selSig = sig;
+      sel.replaceChildren(el('option', { value: '', text: '— elige una tarea —' }));
+      avail.forEach(function (t) {
+        sel.append(el('option', { value: String(t.id), text: t.name + ' · ' + fmt(t.size) + ' · ' + LABEL[t.status] }));
+      });
+    }
+    if (!avail.some(function (t) { return t.id === S.selected; })) S.selected = null;
+    sel.value = S.selected == null ? '' : String(S.selected);
+    rows.forEach(function (r, id) { r.radio.checked = id === S.selected; });
+    var t = S.selected != null ? byId(S.selected) : null;
+    $('admitBtn').disabled = !t || t.status !== 'nuevo';
+    $('loadBtn').disabled = !t;
+    $('admitAllBtn').disabled = !S.tasks.some(function (x) { return x.status === 'nuevo'; });
+  }
+
+  function renderMemory() {
+    var map = $('memMap');
+    map.replaceChildren();
+    var run = S.running !== null ? byId(S.running) : null;
+    var u = userArea();
+    var segs = [{ cls: 'so', title: 'Sistema operativo', sub: fmt(S.osKB), size: S.osKB, start: 0 }];
+    if (run) {
+      segs.push({ cls: 'proc', title: run.name, sub: fmt(run.size) + ' · programa de usuario', size: run.size, start: S.osKB, hue: run.hue });
+      if (u - run.size > 0) segs.push({ cls: 'frag', title: 'Fragmentación interna', sub: fmt(u - run.size) + ' libres, no aprovechables', size: u - run.size, start: S.osKB + run.size });
+    } else {
+      segs.push({ cls: 'free', title: 'Partición de usuario libre', sub: fmt(u), size: u, start: S.osKB });
+    }
+    segs.forEach(function (s) {
+      var blk = el('div', { class: 'blk ' + s.cls, vars: s.hue != null ? { '--h': s.hue } : null },
+        el('strong', { text: s.title }), el('span', { class: 'bsub', text: s.sub }));
+      var row = el('div', { class: 'seg-row' }, el('div', { class: 'addr', text: fmt(s.start) }), blk);
+      row.style.flexGrow = String(s.size);
+      map.append(row);
+    });
+    map.append(el('div', { class: 'seg-end' }, el('div', { class: 'addr', text: fmt(S.ramKB) }), el('div', { class: 'blk', text: 'Fin de la RAM' })));
+
+    $('iBase').textContent = run ? fmt(S.osKB) : '—';
+    $('iLimit').textContent = run ? fmt(run.size) : '—';
+    $('iRange').textContent = run ? fmt(S.osKB) + ' a ' + fmt(S.osKB + run.size - 1) : '—';
+    $('iProc').textContent = run ? run.name : 'Ninguno';
+    $('iFrag').textContent = run ? fmt(u - run.size) : '—';
+    $('iUse').textContent = run ? num(run.size / u * 100) + ' %' : '0 %';
+  }
+
+  function fillList(id, items, build) {
+    var ul = $(id);
+    ul.replaceChildren();
+    if (!items.length) ul.append(el('li', { class: 'li-empty', text: 'Vacío' }));
+    items.forEach(function (t, i) { ul.append(build(t, i)); });
+  }
+  function chip(t, extra) {
+    return el('li', { class: 'chip', vars: { '--h': t.hue } },
+      el('span', { class: 'dot' }), el('strong', { text: t.name }), el('span', { class: 'csize', text: fmt(t.size) }), extra);
+  }
+
+  function renderBoard() {
+    fillList('lNuevo', S.tasks.filter(function (t) { return t.status === 'nuevo'; }), function (t) { return chip(t); });
+    fillList('lListo', S.queue.map(byId).filter(Boolean), function (t, i) {
+      return chip(t, el('span', { class: 'csize', text: 'posición ' + (i + 1) }));
+    });
+    fillList('lRun', S.tasks.filter(function (t) { return t.status === 'ejecucion'; }), function (t) {
+      var p = (t.burst - t.remaining) / t.burst * 100;
+      return chip(t, el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': t.burst, 'aria-valuenow': t.burst - t.remaining, 'aria-label': 'Avance de ' + t.name, vars: { '--p': p + '%' } }, el('i')));
+    });
+    var done = S.tasks.filter(function (t) { return t.status === 'terminado'; }).sort(function (a, b) { return a.endT - b.endT; });
+    var rej = S.tasks.filter(function (t) { return t.status === 'rechazado'; });
+    fillList('lDone', done.concat(rej), function (t) {
+      if (t.status === 'rechazado') {
+        var li = chip(t, el('span', { class: 'rejtxt', text: 'No cabe en la partición' }));
+        li.classList.add('rej');
+        return li;
+      }
+      return chip(t, el('span', { class: 'rejtxt', style: 'color:var(--ok)', text: 'Terminó en t=' + t.endT }));
+    });
+  }
+
+  function renderMetrics() {
+    var done = S.tasks.filter(function (t) { return t.status === 'terminado'; });
+    var avg = function (a) { return a.length ? num(a.reduce(function (x, y) { return x + y; }, 0) / a.length) + ' u.t.' : '—'; };
+    var run = S.running !== null ? byId(S.running) : null;
+    $('mTime').textContent = S.time + ' u.t.';
+    $('mDone').textContent = done.length + ' / ' + S.tasks.length;
+    $('mRej').textContent = String(S.tasks.filter(function (t) { return t.status === 'rechazado'; }).length);
+    $('mWait').textContent = avg(done.map(function (t) { return t.startT - t.admitT; }));
+    $('mTurn').textContent = avg(done.map(function (t) { return t.endT - t.admitT; }));
+    $('mUse').textContent = num(((S.osKB + (run ? run.size : 0)) / S.ramKB) * 100) + ' %';
+  }
+
+  function renderLog() {
+    var ol = $('logList');
+    ol.replaceChildren();
+    S.log.slice(-100).reverse().forEach(function (e) {
+      ol.append(el('li', { class: 'log ' + e.kind }, el('span', { class: 'lt', text: 't=' + e.t }), el('span', { class: 'lm', text: e.msg })));
+    });
+  }
+
+  function renderControls() {
+    $('playBtn').textContent = S.timer ? 'Pausar' : 'Iniciar';
+    $('playBtn').setAttribute('aria-pressed', String(!!S.timer));
+  }
+
+  function renderDynamic() {
+    S.tasks.forEach(updateRow);
+    renderConfig(); renderSelect(); renderMemory(); renderBoard(); renderMetrics(); renderLog(); renderControls();
+  }
+  function renderAll() {
+    selSig = '';
+    renderConfig(); renderTasks(); renderSelect(); renderMemory(); renderBoard(); renderMetrics(); renderLog(); renderControls();
+  }
+
+  /* ---------- eventos ---------- */
+  $('ramVal').addEventListener('input', applyConfig);
+  $('ramUnit').addEventListener('change', applyConfig);
+  $('osVal').addEventListener('input', applyConfig);
+  $('applyRec').addEventListener('click', function () {
+    var rec = Number($('applyRec').dataset.rec);
+    if (!Number.isFinite(rec) || rec > MAX_KB) return;
+    var u = 'KB', v = rec;
+    if (rec >= 1048576) { u = 'GB'; v = rec / 1048576; } else if (rec >= 1024) { u = 'MB'; v = rec / 1024; }
+    $('ramUnit').value = u; $('ramVal').value = v;
+    applyConfig();
+  });
+
+  $('addForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var err = $('addErr');
+    var size = Number($('addSize').value), burst = Number($('addBurst').value);
+    if (S.tasks.length >= MAX_TASKS) { err.textContent = 'Máximo ' + MAX_TASKS + ' tareas. Quita alguna para agregar otra.'; return; }
+    if (!Number.isInteger(size) || size < 1 || size > MAX_KB) { err.textContent = 'El tamaño debe ser un entero entre 1 y ' + MAX_KB.toLocaleString('es-PE') + ' KB.'; return; }
+    if (!Number.isInteger(burst) || burst < 1 || burst > MAX_BURST) { err.textContent = 'La duración debe ser un entero entre 1 y ' + MAX_BURST + ' u.t.'; return; }
+    err.textContent = '';
+    var t = addTask($('addName').value, size, burst);
+    log('Tarea ' + t.name + ' creada (' + fmt(size) + ', ' + burst + ' u.t.). Estado: Nuevo.', 'info');
+    $('addName').value = ''; $('addSize').value = '';
+    renderAll();
+    $('addSize').focus();
+  });
+
+  $('ex1').addEventListener('click', function () { loadExample('s5'); });
+  $('ex2').addEventListener('click', function () { loadExample('rej'); });
+  $('clearAll').addEventListener('click', function () {
+    pause();
+    S.tasks = []; S.queue = []; S.running = null; S.time = 0; S.seq = 0; S.uid = 0; S.selected = null; S.log = [];
+    log('Tabla vaciada.', 'info');
+    renderAll();
+  });
+
+  $('taskSelect').addEventListener('change', function () {
+    S.selected = $('taskSelect').value ? Number($('taskSelect').value) : null;
+    renderSelect();
+  });
+  $('admitBtn').addEventListener('click', function () { admit(byId(S.selected)); renderDynamic(); });
+  $('loadBtn').addEventListener('click', function () { load(byId(S.selected)); renderDynamic(); });
+  $('admitAllBtn').addEventListener('click', function () {
+    S.tasks.filter(function (t) { return t.status === 'nuevo'; }).forEach(admit);
+    renderDynamic();
+  });
+
+  document.querySelectorAll('input[name="mode"]').forEach(function (r) {
+    r.addEventListener('change', function () {
+      if (!r.checked) return;
+      S.mode = r.value;
+      log(r.value === 'auto' ? 'Modo automático: el SO carga la siguiente tarea de la cola al liberar la memoria.' : 'Modo manual: tú eliges qué tarea cargar con el selector.', 'info');
+      renderLog();
+    });
+  });
+
+  $('playBtn').addEventListener('click', function () { if (S.timer) pause(); else play(); });
+  $('stepBtn').addEventListener('click', function () { step(); });
+  $('resetBtn').addEventListener('click', resetSim);
+  $('speed').addEventListener('input', function () {
+    if (S.timer) { clearInterval(S.timer); S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 700); }
+  });
+
+  /* ---------- tema (inicia en claro) ---------- */
+  function setTheme(t, save) {
+    document.documentElement.setAttribute('data-theme', t);
+    document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-btn') === t));
+    });
+    if (save) { try { localStorage.setItem('sim-contigua-tema', t); } catch (e) { /* sin almacenamiento */ } }
+  }
+  document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+    b.addEventListener('click', function () { setTheme(b.getAttribute('data-theme-btn'), true); });
+  });
+  var saved = null;
+  try { saved = localStorage.getItem('sim-contigua-tema'); } catch (e) { saved = null; }
+  setTheme(saved === 'dark' ? 'dark' : 'light', false);
+
+  loadExample('s5');
+})();
+</script>
+</body>
+</html>
