@@ -1,318 +1,590 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es" data-sim-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Simulador de memoria · Asignación contigua simple</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Simulador de asignación contigua</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
+/* Diseño: tres vistas tipo diapositiva. El simulador ocupa una sola pantalla en 3 columnas:
+   tareas | mapa de memoria | estados + resultados + bitácora. */
 :root{
   color-scheme: light;
   --bg:#f3f5f8; --surface:#ffffff; --surface-2:#eef1f5; --text:#141a24; --muted:#586374;
-  --border:#d6dbe3; --accent:#1f5fbf; --accent-contrast:#ffffff;
-  --ok:#14773a; --warn:#9a5b00; --danger:#c0262d; --so:#445168;
+  --border:#d6dbe3; --accent:#1a1608; --accent-contrast:#ffffff;
+  --ok:#14773a; --warn:#9a5b00; --danger:#c0262d; --so:#445168; --upn:#f6b21a; --upn-ink:#1a1608;
+  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px);
   padding-bottom:env(safe-area-inset-bottom,0px);
 }
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    color-scheme: dark;
-    --bg:#0e1319; --surface:#161c25; --surface-2:#1d2530; --text:#e7ebf1; --muted:#9ba6b6;
-    --border:#2a3441; --accent:#6c9bff; --accent-contrast:#0a1020;
-    --ok:#4cc27a; --warn:#f0b34a; --danger:#ff8080; --so:#5d6c85;
-  }
-}
-:root[data-theme="dark"]{
+:root[data-sim-theme="dark"]{
   color-scheme: dark;
   --bg:#0e1319; --surface:#161c25; --surface-2:#1d2530; --text:#e7ebf1; --muted:#9ba6b6;
-  --border:#2a3441; --accent:#6c9bff; --accent-contrast:#0a1020;
+  --border:#2a3441; --accent:#f6b21a; --accent-contrast:#1a1608;
   --ok:#4cc27a; --warn:#f0b34a; --danger:#ff8080; --so:#5d6c85;
 }
-html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%}
 *,*::before,*::after{box-sizing:inherit}
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--text);
-  font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-.wrap{max-width:1280px;margin:0 auto;padding:16px max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left))}
-.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
-h1{font-size:1.5rem;line-height:1.2;margin:0}
-.sub{margin:4px 0 0;color:var(--muted);font-size:.95rem}
-h2{font-size:1.05rem;margin:0 0 12px;line-height:1.3}
-h3{font-size:.95rem;margin:0 0 8px}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px}
-.layout{display:grid;gap:0 16px;grid-template-columns:minmax(0,1fr)}
-@media (min-width:1000px){.layout{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 var(--font);overflow:hidden}
+h1,h2,h3{text-wrap:balance}
+h2{font-size:1.05rem;margin:0 0 10px;line-height:1.3}
+h3{font-size:.92rem;margin:0 0 6px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* controles */
 input,select,button{font:inherit;color:inherit}
-input,select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}
+input,select{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;min-height:38px;max-width:100%}
 input:disabled,select:disabled{opacity:.55;cursor:not-allowed;background:var(--surface-2)}
 input[aria-invalid="true"]{border-color:var(--danger)}
+input[type="range"]{padding:0;min-height:0;border:0;background:transparent;width:120px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.btn{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;min-height:40px;cursor:pointer;font-weight:550}
+.btn{background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:6px 14px;min-height:38px;cursor:pointer;font-weight:550}
 .btn:hover:not(:disabled){border-color:var(--accent)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
 .btn.small{min-height:32px;padding:4px 10px;font-size:.88rem}
+.btn.icon{min-width:32px;padding:2px 8px;font-size:1.15rem;line-height:1}
+.btn.big{min-height:48px;padding:10px 22px;font-size:1.02rem}
 .btn.danger{color:var(--danger)}
-.seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface)}
-.seg button{border:0;background:transparent;padding:8px 14px;min-height:40px;cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-contrast)}
-.field{display:flex;flex-direction:column;gap:4px}
-.field label,.lbl{font-size:.85rem;color:var(--muted)}
-.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label,.lbl{font-size:.8rem;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
 .row.tight{gap:8px}
 .inline{display:flex;gap:6px}
-.note{margin:10px 0 0;padding:8px 12px;border-radius:8px;background:var(--surface-2);font-size:.92rem;border-left:4px solid var(--muted)}
+.note{margin:8px 0 0;padding:6px 10px;border-radius:8px;background:var(--surface-2);font-size:.85rem;border-left:4px solid var(--muted)}
 .note.ok{border-left-color:var(--ok)}
 .note.warn{border-left-color:var(--warn)}
-.err{color:var(--danger);font-size:.9rem;margin:6px 0 0;min-height:1.3em}
+.err{color:var(--danger);font-size:.85rem;margin:6px 0 0}
+.err:empty{display:none}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;min-width:0}
+
+/* selectores segmentados (tema y modo) */
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface)}
+.seg:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.seg button{border:0;background:transparent;padding:6px 12px;min-height:34px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-contrast)}
+.seg label{position:relative;display:block;margin:0;cursor:pointer}
+.seg label input{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;min-height:0;opacity:0;cursor:pointer;border:0}
+.seg label span{display:block;padding:6px 14px;min-height:36px;line-height:24px;font-weight:550}
+.seg label input:checked + span{background:var(--accent);color:var(--accent-contrast)}
+
+/* estructura de la app */
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+.appbar{background:var(--surface);border-bottom:1px solid var(--border)}
+.appbar-in{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 12px;min-height:48px;
+  padding-top:2px;padding-bottom:2px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.brand{font-weight:700;letter-spacing:-.01em}
+@media (max-width:760px){.brand{display:none}}
+@media (max-width:480px){.tabs button{padding:8px 6px;font-size:.9rem}.seg button{padding:5px 8px;font-size:.9rem}.appbar-in{gap:0 6px}}
+.tabs{display:flex;gap:4px}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:8px 12px;min-height:44px;cursor:pointer;color:var(--muted);font-weight:600}
+.tabs button:hover{color:var(--text)}
+.tabs button[aria-current="page"]{color:var(--text);border-bottom-color:var(--upn)}
+.deck{position:relative;overflow:hidden;min-height:0}
+.track{position:absolute;inset:0;display:flex}
+.track.anim{transition:transform .35s cubic-bezier(.4,0,.2,1)}
+@media (prefers-reduced-motion:reduce){.track.anim{transition:none}}
+.slide{flex:0 0 100%;min-width:0;height:100%;overflow-y:auto;overflow-x:hidden;outline:none}
+.slide-inner{width:100%;max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* portada */
+.cover{display:flex;flex-direction:column;gap:20px;min-height:100%;padding-top:18px;padding-bottom:18px;cursor:pointer}
+.cv-main{flex:1;display:flex;flex-direction:column;justify-content:center;gap:28px}
+.cover .btn.primary{background:var(--text);border-color:var(--text);color:var(--bg)}
+.cover .btn:hover:not(:disabled){border-color:var(--upn);box-shadow:0 0 0 2px var(--upn)}
+.cv-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px 16px;padding-bottom:10px;border-bottom:3px solid var(--upn)}
+.cv-course{font-size:.8rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.cv-uni{display:inline-flex;align-items:center;gap:8px;font-size:.88rem;font-weight:600;color:var(--muted)}
+.cv-uni::before{content:"";width:10px;height:10px;background:var(--upn);border-radius:2px}
+.cv-foot{margin-top:auto;padding:10px 14px;border-radius:10px;background:var(--surface);border:1px solid var(--border)}
+.cv-meta{margin:0;display:grid;gap:6px}
+.cv-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:baseline}
+.cv-meta dt{font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.cv-meta dd{margin:0;display:flex;flex-wrap:wrap;gap:2px 22px;font-size:.84rem}
+.cv-meta small{font:.72rem var(--mono);color:var(--muted);margin-left:5px}
+@media (max-width:640px){.cv-row{grid-template-columns:1fr;gap:2px}}
+.cover h1{font-size:clamp(2.1rem,6.4vw,4.4rem);line-height:1.02;letter-spacing:-.03em;font-weight:700;margin:0;max-width:16ch}
+.cover .lead{margin:14px 0 0;max-width:54ch;font-size:1.15rem;color:var(--muted)}
+.cover-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.cover-hint{color:var(--muted);font-size:.85rem}
+.credit{color:var(--muted);font-size:.85rem}
+.membar{margin:0}
+.mb-track{display:flex;height:84px;border:2px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
+.mb-seg{display:flex;flex-direction:column;justify-content:center;padding:6px 12px;min-width:0;overflow:hidden;font-size:.85rem;line-height:1.25}
+.mb-seg strong{overflow-wrap:anywhere}
+.mb-so{flex:10 1 0;background:var(--so);color:#fff}
+.mb-prog{flex:0 0 0%;background:var(--upn);color:var(--upn-ink)}
+.cv-track .mb-prog{background:var(--upn);color:var(--upn-ink)}
+.cv-track .cv-fill{background:rgb(26 22 8/.2)}
+.mb-free{flex:1 1 0;border-left:2px dashed var(--warn);
+  background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--warn) 24%,transparent) 0 8px,transparent 8px 16px)}
+.mb-ticks{position:relative;height:30px;margin-top:6px;font:.74rem var(--mono);color:var(--muted)}
+.mb-ticks span{position:absolute;top:0;transform:translateX(-50%);white-space:nowrap}
+.mb-ticks span::before{content:"";display:block;width:1px;height:8px;background:var(--muted);margin:0 auto 2px}
+.mb-ticks span:first-child{transform:none}
+.mb-ticks span:first-child::before{margin-left:0}
+.mb-ticks span:last-child{transform:translateX(-100%)}
+.mb-ticks span:last-child::before{margin-left:auto}
+.membar figcaption{margin-top:4px;color:var(--muted);font-size:.85rem;max-width:70ch}
+.cv-track .mb-so{flex:0 0 15.625%}
+.cv-track .mb-prog{position:relative;padding:0;transition:flex-basis .9s cubic-bezier(.3,.7,.2,1),opacity .5s}
+.cv-track .mb-prog.gone{opacity:0}
+.cv-track .mb-free{transition:background .4s;border-left-color:transparent}
+.cv-track.has-prog .mb-free{border-left-color:var(--warn)}
+.cv-track:not(.has-prog) .mb-free{background:color-mix(in srgb,var(--upn) 14%,transparent)}
+.cv-prog-in{position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;padding:6px 12px;height:100%;min-width:0}
+.cv-fill{position:absolute;inset:0 auto 0 0;width:0;transition:width 0s linear}
+.cv-tick-mid{transition:left .9s cubic-bezier(.3,.7,.2,1),opacity .4s}
+.kicker{display:inline-block;margin:0 0 12px;padding:3px 10px;border-radius:4px;background:var(--upn);color:var(--upn-ink);font-size:.76rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+@media (prefers-reduced-motion:reduce){.cv-track .mb-prog,.cv-track .mb-free,.cv-tick-mid{transition:none}}
+@media (max-width:520px){.cv-tick-mid{display:none}}
+@media (max-height:700px){.cover{gap:12px;padding-top:10px;padding-bottom:10px}.cv-main{gap:16px}}
+
+/* teoría */
+.theory{display:flex;flex-direction:column;min-height:100%}
+.theory .slide-inner{flex:1;padding-top:16px;padding-bottom:16px}
+.grid3{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);align-items:start}
+@media (min-width:1100px){.grid3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.prose p{margin:0 0 10px}
+.prose ul{margin:0 0 10px;padding-left:20px}
+.prose li{margin:3px 0}
+.prose h3{margin:10px 0 6px}
+.two{display:grid;gap:4px 12px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1100px) and (max-width:1399px){.two{grid-template-columns:minmax(0,1fr)}}
+.mb-track.small{height:46px;margin:0 0 4px}
+.mb-track.small .mb-so{flex:1}
+.mb-track.small .mb-user{flex:4;background:color-mix(in srgb,var(--upn) 26%,transparent)}
+.prose figure{margin:0 0 10px}
+.prose figcaption{font-size:.8rem;color:var(--muted)}
+ol.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:7px}
+dl.gloss{display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 12px;margin:0}
+dl.gloss dt{font-weight:600}
+dl.gloss dd{margin:0;color:var(--muted)}
+.slide-foot{position:sticky;bottom:0;background:var(--bg);border-top:1px solid var(--border)}
+.slide-foot .slide-inner{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding-top:10px;padding-bottom:10px}
+.slide-foot .grp{display:flex;gap:10px;flex-wrap:wrap}
+
+/* simulador */
+.sim{width:100%;max-width:1760px;margin:0 auto;height:100%;min-height:600px;display:grid;gap:12px;
+  grid-template-columns:minmax(0,1.35fr) minmax(0,.85fr) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);
+  padding-top:12px;padding-bottom:12px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sim .card{padding:12px}
+.sim h2{font-size:.95rem;margin:0 0 8px}
+.toolbar{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:8px 18px;align-items:flex-end;padding:8px 12px}
+.tb-group{display:flex;gap:8px;flex-wrap:wrap}
+.tb-mode{display:flex;flex-direction:column;gap:3px}
+.tb-manual{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+.clock{display:flex;flex-direction:column;gap:0;min-width:70px}
+.clock strong{font:500 1.5rem/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.clock .lbl{line-height:1.2}
+.now{display:flex;flex-direction:column;flex:1 1 280px;min-width:0;align-self:stretch;justify-content:center;border-left:4px solid var(--upn);padding-left:12px}
+.nowlbl{font-size:.74rem;color:var(--muted);font-weight:600}
+#nowMsg{font-weight:600;line-height:1.3}
+.nowhelp{color:var(--muted);font-size:.8rem}
+.cardhead{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cardhead h2{margin:0}
+.colL,.colM,.colR{display:flex;flex-direction:column;gap:12px;min-height:0}
+.c-tasks,.c-mem,.c-log{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
 
 /* estadísticas */
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:12px 0 0}
-.stat{background:var(--surface-2);border-radius:10px;padding:10px 12px;margin:0}
-.stat dt{font-size:.78rem;color:var(--muted)}
-.stat dd{margin:2px 0 0;font-weight:650;font-size:1.1rem;font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:10px 0 0}
+.stats.wide{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:560px){.stats.wide{grid-template-columns:minmax(0,1fr)}}
+.stats.compact{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:0}
+.stat{background:var(--surface-2);border-radius:10px;padding:8px 10px;margin:0}
+.stats.compact .stat{padding:4px 9px}
+.stat dt{font-size:.74rem;color:var(--muted)}
+.stat dd{margin:2px 0 0;font-weight:650;font-size:1.02rem;font-variant-numeric:tabular-nums}
+.stats.compact dd{font-size:.98rem}
+.sdesc{display:block;font-weight:400;font-size:.74rem;color:var(--muted);margin-top:2px;line-height:1.3}
 
-/* tabla */
-.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
-table{width:100%;border-collapse:collapse;font-size:.93rem}
-th{font-size:.78rem;color:var(--muted);text-align:left;font-weight:600;padding:8px 8px;background:var(--surface-2);white-space:nowrap}
-td{padding:6px 8px;border-top:1px solid var(--border);vertical-align:middle}
-tr.is-running td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
-.in-name{width:104px}
-.in-num{width:92px}
+/* tabla de tareas */
+.tablewrap{overflow:auto;border:1px solid var(--border);border-radius:10px}
+.tablewrap.grow{flex:1 1 0;min-height:90px}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{position:sticky;top:0;z-index:1;font-size:.74rem;color:var(--muted);text-align:left;font-weight:600;padding:6px;background:var(--surface-2);white-space:nowrap}
+td{padding:3px 6px;border-top:1px solid var(--border);vertical-align:middle}
+td input{min-height:30px;padding:2px 6px}
+tr.is-running td{background:color-mix(in srgb,var(--upn) 16%,transparent)}
+.in-name{width:84px}
+.in-num{width:72px}
 .empty{color:var(--muted);text-align:center;padding:18px 8px}
-.hint{display:block;font-size:.76rem;color:var(--warn);line-height:1.25;max-width:160px}
+.hint{display:block;font-size:.72rem;color:var(--warn);line-height:1.2;max-width:150px}
 .namecell{display:flex;align-items:center;gap:6px}
-.dot{width:12px;height:12px;border-radius:50%;flex:none;background:hsl(var(--h,210) 65% 38%)}
-.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.8rem;font-weight:600;white-space:nowrap;
+.dot{width:12px;height:12px;border-radius:50%;flex:none;background:var(--upn);box-shadow:inset 0 0 0 1px rgb(0 0 0/.3)}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:.78rem;font-weight:600;white-space:nowrap;
   color:var(--muted);background:color-mix(in srgb,currentColor 14%,transparent)}
 .st-listo{color:var(--warn)} .st-ejecucion{color:var(--accent)} .st-terminado{color:var(--ok)} .st-rechazado{color:var(--danger)}
-.addrow{margin-top:12px}
+.addrow{margin-top:10px}
+.is-auto .col-pick{display:none}
 
 /* mapa de memoria */
-.memwrap{display:grid;grid-template-columns:minmax(200px,270px) minmax(0,1fr);gap:16px}
-@media (max-width:620px){.memwrap{grid-template-columns:minmax(0,1fr)}}
-.mem{display:flex;flex-direction:column;min-height:430px;border:2px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
-.seg-row{flex:1 1 0;min-height:48px;display:flex;border-bottom:1px solid var(--border)}
-.addr{width:74px;flex:none;font-size:.74rem;color:var(--muted);text-align:right;padding:4px 8px 4px 4px;border-right:1px solid var(--border);font-variant-numeric:tabular-nums}
+.mem{flex:1 1 0;min-height:200px;display:flex;flex-direction:column;border:2px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
+.seg-row{flex:1 1 0;min-height:44px;display:flex;border-bottom:1px solid var(--border)}
+.addr{width:72px;flex:none;font:.72rem var(--mono);color:var(--muted);text-align:right;padding:4px 8px 4px 4px;border-right:1px solid var(--border)}
 .blk{flex:1;min-width:0;padding:6px 10px;display:flex;flex-direction:column;justify-content:center;overflow:hidden}
 .blk strong{font-size:.92rem;overflow-wrap:anywhere}
-.bsub{font-size:.78rem;opacity:.9}
+.bsub{font-size:.78rem;opacity:.92}
 .blk.so{background:var(--so);color:#fff}
-.blk.proc{background:hsl(var(--h) 65% 38%);color:#fff}
+.blk.proc{background:var(--upn);color:var(--upn-ink);transform-origin:top}
 .blk.free{background:repeating-linear-gradient(45deg,transparent 0 8px,color-mix(in srgb,var(--muted) 14%,transparent) 8px 16px)}
 .blk.frag{background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--warn) 24%,transparent) 0 8px,transparent 8px 16px);border-top:2px dashed var(--warn)}
-.seg-end{display:flex;height:26px}
-.seg-end .blk{padding:2px 10px;font-size:.78rem;color:var(--muted);justify-content:center}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:.93rem}
-.kv dt{color:var(--muted)}
-.kv dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.seg-end{display:flex;height:24px}
+.seg-end .blk{padding:2px 10px;font-size:.76rem;color:var(--muted);justify-content:center}
+.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0 0}
+.kv>div{background:var(--surface-2);border-radius:8px;padding:5px 8px;min-width:0}
+.kv dt{font-size:.7rem;color:var(--muted);line-height:1.2}
+.kv dd{margin:1px 0 0;font-weight:600;font-size:.88rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+@media (prefers-reduced-motion:no-preference){
+  .blk.enter{animation:pop .45s ease-out}
+  @keyframes pop{from{transform:scaleY(.35);opacity:.3}}
+}
 
-/* tablero de estados */
-.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-@media (max-width:720px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.bcol{background:var(--surface-2);border-radius:10px;padding:10px;min-height:96px}
-.bcol ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.chip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:.88rem}
-.chip .csize{color:var(--muted);font-size:.8rem;margin-left:auto}
+/* estados de las tareas */
+.brow{display:grid;grid-template-columns:128px minmax(0,1fr);gap:10px;padding:8px 0;border-top:1px solid var(--border);align-items:start}
+.brow:first-of-type{border-top:0;padding-top:0}
+.bhead h3{margin:0}
+.cdesc{margin:2px 0 0;font-size:.74rem;color:var(--muted);line-height:1.25}
+.brow ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;max-height:8rem;overflow:auto}
+.chip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 8px;font-size:.86rem}
+.chip .csize{color:var(--muted);font-size:.78rem;margin-left:auto}
 .chip.rej{border-color:var(--danger)}
-.chip .rejtxt{color:var(--danger);font-size:.78rem;width:100%}
+.chip .rejtxt{color:var(--danger);font-size:.74rem;width:100%}
 .chip .bar{width:100%}
 .bar{height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
-.bar i{display:block;height:100%;background:var(--accent);width:var(--p,0%)}
-.li-empty{color:var(--muted);font-size:.85rem}
+.bar i{display:block;height:100%;background:var(--upn);width:var(--p,0%)}
+.li-empty{color:var(--muted);font-size:.82rem}
+@media (max-width:420px){.brow{grid-template-columns:minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
 
 /* bitácora */
-.log{display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--border);font-size:.9rem}
+.log{display:flex;gap:8px;padding:4px 0;border-top:1px solid var(--border);font-size:.84rem}
 .log:first-child{border-top:0}
-.lt{color:var(--muted);font-variant-numeric:tabular-nums;flex:none;min-width:3.2em}
+.lt{color:var(--muted);font:.76rem var(--mono);flex:none;min-width:3.4em;padding-top:2px}
 .log.ok .lm{color:var(--ok)} .log.warn .lm{color:var(--warn)} .log.err .lm{color:var(--danger)}
-#logList{list-style:none;margin:0;padding:0;max-height:280px;overflow-y:auto}
+#logList{list-style:none;margin:0;padding:0;flex:1 1 0;min-height:0;overflow-y:auto}
 
-details.help summary{cursor:pointer;font-weight:600}
-details.help ul{margin:10px 0 0;padding-left:20px}
-details.help li{margin:4px 0}
-.mode{display:flex;gap:14px;flex-wrap:wrap}
-.mode label{display:flex;gap:6px;align-items:center;cursor:pointer}
-.mode input{min-height:0}
-footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
-@media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
+/* pantallas angostas: el simulador pasa a una sola columna con desplazamiento */
+@media (max-width:1239px){
+  .sim{display:flex;flex-direction:column;height:auto;min-height:0}
+  .colL,.colM,.colR{display:contents}
+  .toolbar{order:0}.c-config{order:2}.c-tasks{order:3}.c-mem{order:4}.c-board{order:5}.c-res{order:6}.c-log{order:7}
+  .c-tasks,.c-mem,.c-log{flex:none}
+  .mem{flex:none;min-height:320px}
+  .tablewrap.grow{flex:none;max-height:340px}
+  #logList{flex:none;max-height:260px}
+  .sim>*{min-width:0}
+}
+/* laptops de poca altura: se compacta para que se vea todo sin bajar */
+@media (min-width:1240px) and (max-height:820px){
+  .sim{gap:10px;padding-top:10px;padding-bottom:10px}
+  .sim .card{padding:10px}
+  .cdesc{display:none}
+  .brow{padding:6px 0}
+  .note{margin-top:6px;padding:4px 10px}
+  .stats{margin-top:6px}
+}
+@media (max-width:1239px) and (min-width:600px){
+  .toolbar{position:sticky;top:0;z-index:5}
+}
 </style>
 </head>
 <body>
 <noscript><p style="padding:16px">Este simulador necesita JavaScript activado.</p></noscript>
-<div class="wrap">
+<div class="app">
 
-<header class="top">
-  <div>
-    <h1>Simulador de memoria: asignación contigua simple</h1>
-    <p class="sub">Monoprogramación: SO + una sola partición de usuario. Sistemas Operativos.</p>
-  </div>
-  <div class="seg" role="group" aria-label="Tema de color">
-    <button type="button" data-theme-btn="light" aria-pressed="true">Claro</button>
-    <button type="button" data-theme-btn="dark" aria-pressed="false">Oscuro</button>
+<header class="appbar">
+  <div class="appbar-in">
+    <span class="brand">Memoria contigua simple</span>
+    <nav class="tabs" aria-label="Secciones">
+      <button type="button" data-go="0">Portada</button>
+      <button type="button" data-go="1">Teoría</button>
+      <button type="button" data-go="2">Simulador</button>
+    </nav>
+    <div class="seg" role="group" aria-label="Tema de color">
+      <button type="button" data-theme-btn="light" aria-pressed="true">Claro</button>
+      <button type="button" data-theme-btn="dark" aria-pressed="false">Oscuro</button>
+    </div>
   </div>
 </header>
 
-<details class="card help">
-  <summary>¿Cómo funciona la asignación contigua simple?</summary>
-  <ul>
-    <li>La RAM se divide en dos zonas: el <strong>sistema operativo</strong> y <strong>una única partición de usuario</strong>.</li>
-    <li>Solo un programa de usuario está en memoria a la vez. Los demás esperan en la cola (estado <em>Listo</em>).</li>
-    <li>El programa ocupa un bloque contiguo. Lo que sobra de la partición es <strong>fragmentación interna</strong>: está libre pero nadie más puede usarlo.</li>
-    <li>Si un programa es más grande que la partición, no se puede ejecutar y queda <em>Rechazada</em>. Se resuelve con más RAM (usa la calculadora) o con otras técnicas (overlays, memoria virtual).</li>
-    <li>Los registros <strong>base</strong> y <strong>límite</strong> protegen al SO: el programa solo puede acceder a direcciones entre base y base + límite.</li>
-    <li>Estados del proceso: <em>Nuevo</em> → <em>Listo</em> (cola de espera) → <em>En ejecución</em> → <em>Terminado</em>.</li>
-  </ul>
-</details>
+<main class="deck">
+<div class="track" id="track">
 
-<div class="layout">
-<div class="col">
+<!-- Vista 1: portada -->
+<section class="slide" id="s-portada" aria-label="Portada" tabindex="-1">
+  <div class="slide-inner cover">
+    <div class="cv-top">
+      <span class="cv-course">Sistemas Operativos</span>
+      <span class="cv-uni">Universidad Privada del Norte · 2026</span>
+    </div>
+    <div class="cv-main">
+    <div>
+      <p class="kicker">Gestión de memoria</p>
+      <h1>Asignación contigua simple</h1>
+      <p class="lead">Simulador interactivo de cómo un sistema operativo reparte la memoria RAM entre él mismo y un solo programa a la vez.</p>
+    </div>
+    <figure class="membar" aria-label="Animación: programas A, B, C y D entran uno por uno a la partición de usuario de una RAM de 64 KB con un sistema operativo de 10 KB">
+      <div class="mb-track cv-track" id="cvTrack">
+        <div class="mb-seg mb-so"><strong>SO</strong><span>10 KB</span></div>
+        <div class="mb-seg mb-prog gone" id="cvProg"><div class="cv-fill" id="cvFill"></div><div class="cv-prog-in"><strong id="cvName">A</strong><span id="cvSize">8 KB</span></div></div>
+        <div class="mb-seg mb-free"><strong id="cvFreeT">Partición de usuario libre</strong><span id="cvFreeS">54 KB disponibles</span></div>
+      </div>
+      <div class="mb-ticks" aria-hidden="true">
+        <span style="left:0%">0</span><span style="left:15.625%">10 KB</span><span class="cv-tick-mid" id="cvTick" style="left:28.125%;opacity:0">18 KB</span><span style="left:100%">64 KB</span>
+      </div>
+    </figure>
+    <div>
+      <div class="cover-actions">
+        <button type="button" class="btn primary big" data-go="1">Ver la teoría</button>
+        <button type="button" class="btn big" data-go="2">Ir al simulador</button>
+        <span class="cover-hint">Avanza con las flechas del teclado o haciendo clic en cualquier parte.</span>
+      </div>
+    </div>
+    </div>
+    <footer class="cv-foot">
+      <dl class="cv-meta">
+        <div class="cv-row"><dt>Autores</dt>
+          <dd><span>ENCOMENDEROS RUIZ, Wilbort Yeysson <small>N00077394</small></span>
+              <span>ESPINOZA ACEVEDO, José Francisco <small>N00331673</small></span>
+              <span>SÁNCHEZ DELGADO, Daniel Joaquín <small>N00440666</small></span></dd></div>
+        <div class="cv-row"><dt>Docente</dt><dd><span>Dr. POLO ROMERO, Víctor Jaime</span></dd></div>
+      </dl>
+    </footer>
+  </div>
+</section>
 
-  <!-- 1. RAM -->
-  <section class="card" aria-labelledby="h-ram">
-    <h2 id="h-ram">1. Memoria RAM y calculadora</h2>
-    <div class="row">
-      <div class="field">
-        <label for="ramVal">Tamaño de la RAM</label>
-        <div class="inline">
-          <input id="ramVal" type="number" min="1" step="any" value="64" inputmode="decimal" style="width:110px">
-          <select id="ramUnit" aria-label="Unidad de la RAM">
-            <option value="KB" selected>KB</option><option value="MB">MB</option><option value="GB">GB</option>
-          </select>
+<!-- Vista 2: teoría -->
+<section class="slide" id="s-teoria" aria-label="Teoría" tabindex="-1">
+  <div class="theory" data-bg>
+    <div class="slide-inner" data-bg>
+      <div class="grid3" data-bg>
+
+        <section class="card prose" aria-labelledby="h-que">
+          <h2 id="h-que">¿Qué simula esto?</h2>
+          <p>Simula una técnica de administración de memoria, no una computadora completa: la <strong>asignación contigua simple</strong>.</p>
+          <p>La RAM se divide en dos zonas: el <strong>sistema operativo</strong> (SO) y <strong>una única partición</strong> para el programa del usuario. Cabe un programa a la vez; los demás esperan su turno.</p>
+          <figure>
+            <div class="mb-track small" aria-hidden="true">
+              <div class="mb-seg mb-so"><strong>SO</strong></div>
+              <div class="mb-seg mb-user"><strong>Partición de usuario: 1 programa</strong></div>
+            </div>
+            <figcaption>RAM = SO + una partición.</figcaption>
+          </figure>
+          <h3>Ventajas</h3>
+          <ul>
+            <li>Es muy fácil de programar y de entender.</li>
+            <li>Administrar la memoria casi no consume recursos.</li>
+            <li>La protección es sencilla: dos registros, base y límite.</li>
+          </ul>
+          <h3>Desventajas</h3>
+          <ul>
+            <li>Se desperdicia memoria: lo que el programa no usa de la partición queda libre pero inutilizable (fragmentación interna).</li>
+            <li>Un programa más grande que la partición no se puede ejecutar.</li>
+            <li>Con un solo programa, si espera entrada o salida el procesador queda ocioso.</li>
+          </ul>
+        </section>
+
+        <section class="card prose" aria-labelledby="h-donde">
+          <h2 id="h-donde">¿Dónde se usó y dónde se parece?</h2>
+          <ul>
+            <li><strong>MS-DOS y CP/M.</strong> Sistemas de un solo usuario y una sola tarea: el programa se cargaba en la memoria libre que dejaba el sistema operativo.</li>
+            <li><strong>Computadoras antiguas de procesamiento por lotes.</strong> Terminaban un trabajo completo antes de empezar el siguiente.</li>
+            <li><strong>Sistemas embebidos y microcontroladores simples.</strong> El firmware es el único programa en memoria, igual que aquí. Es un parecido de idea: la mayoría de microcontroladores no tiene un sistema operativo que cargue programas y reparta memoria, así que no es esta técnica aplicada tal cual.</li>
+          </ul>
+          <h3>Los cuatro estados de una tarea</h3>
+          <dl class="gloss">
+            <dt>Nuevo</dt><dd>Creada, todavía no pide memoria.</dd>
+            <dt>Listo</dt><dd>Puede ejecutarse, pero espera en la cola a que la memoria quede libre.</dd>
+            <dt>En ejecución</dt><dd>Está cargada en la partición y usa el procesador.</dd>
+            <dt>Terminado</dt><dd>Acabó y liberó la memoria. Si no cabía en la partición, queda rechazada.</dd>
+          </dl>
+          <p class="note">Hoy los equipos de propósito general usan particiones múltiples, paginación y memoria virtual. Contigua simple sirve para entender por qué hicieron falta.</p>
+        </section>
+
+        <section class="card prose" aria-labelledby="h-uso">
+          <h2 id="h-uso">Cómo usarlo</h2>
+          <ol class="steps">
+            <li><strong>Define la memoria.</strong> Escribe la RAM total y lo que ocupa el SO. Lo que sobra es la partición de usuario.</li>
+            <li><strong>Revisa las tareas.</strong> Ya hay un ejemplo. Edita los valores o agrega más. Si una tarea es mayor que la partición, queda rechazada.</li>
+            <li><strong>Elige el modo.</strong> Automático: el SO atiende las tareas por orden de llegada. Manual: tú eliges cuál cargar.</li>
+            <li><strong>Pulsa Iniciar.</strong> Para explicar en clase, avanza de a una unidad de tiempo.</li>
+            <li><strong>Observa.</strong> El mapa de memoria, los estados de las tareas y la línea «Ahora» muestran qué pasa y por qué.</li>
+          </ol>
+          <h3>Glosario</h3>
+          <dl class="gloss">
+            <dt>Partición de usuario</dt><dd>RAM menos SO: donde se carga el programa.</dd>
+            <dt>Registro base</dt><dd>Dirección donde empieza el programa.</dd>
+            <dt>Registro límite</dt><dd>Tamaño del programa. Un acceso fuera de base + límite hace que el SO lo detenga.</dd>
+            <dt>Fragmentación interna</dt><dd>Parte de la partición que el programa no usa.</dd>
+            <dt>Cola de espera</dt><dd>Tareas en estado Listo.</dd>
+            <dt>Espera</dt><dd>Tiempo desde que la tarea entra a la cola hasta que se carga.</dd>
+            <dt>Retorno</dt><dd>Tiempo desde que entra a la cola hasta que termina.</dd>
+            <dt>u.t.</dt><dd>Unidad de tiempo del simulador.</dd>
+          </dl>
+        </section>
+
+      </div>
+    </div>
+    <div class="slide-foot">
+      <div class="slide-inner">
+        <div class="grp">
+          <button type="button" class="btn" data-go="0">Volver a la portada</button>
+          <button type="button" class="btn primary" data-go="2">Ir al simulador</button>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- Vista 3: simulador -->
+<section class="slide" id="s-simulador" aria-label="Simulador" tabindex="-1">
+  <div class="sim">
+
+    <div class="toolbar card" role="toolbar" aria-label="Controles de la simulación">
+      <div class="tb-group">
+        <button type="button" class="btn primary" id="playBtn">Iniciar</button>
+        <button type="button" class="btn" id="stepBtn">Avanzar 1 u.t.</button>
+        <button type="button" class="btn" id="resetBtn">Reiniciar</button>
+      </div>
       <div class="field">
-        <label for="osVal">Tamaño del SO (KB)</label>
-        <input id="osVal" type="number" min="1" step="1" value="10" inputmode="numeric" style="width:110px">
+        <label for="speed">Velocidad (de lenta a rápida)</label>
+        <input id="speed" type="range" min="1" max="5" step="1" value="2">
       </div>
-      <button type="button" class="btn" id="applyRec">Usar RAM recomendada</button>
-    </div>
-    <p class="err" id="cfgErr" role="alert"></p>
-    <p class="note" id="cfgLock" hidden>Hay un programa en memoria: la RAM y el SO no se pueden cambiar hasta que termine.</p>
-    <dl class="stats">
-      <div class="stat"><dt>Partición de usuario</dt><dd id="cUser">—</dd></div>
-      <div class="stat"><dt>Tarea mayor</dt><dd id="cMax">—</dd></div>
-      <div class="stat"><dt>RAM mínima (SO + mayor)</dt><dd id="cMin">—</dd></div>
-      <div class="stat"><dt>RAM recomendada</dt><dd id="cRec">—</dd></div>
-      <div class="stat"><dt>Suma de tareas</dt><dd id="cSum">—</dd></div>
-    </dl>
-    <p class="note" id="ramMsg" role="status"></p>
-  </section>
-
-  <!-- 2. Tareas -->
-  <section class="card" aria-labelledby="h-tasks">
-    <h2 id="h-tasks">2. Tabla de tareas</h2>
-    <div class="tablewrap">
-      <table>
-        <thead><tr>
-          <th scope="col">Elegir</th><th scope="col">Tarea</th><th scope="col">Tamaño (KB)</th>
-          <th scope="col">Duración (u.t.)</th><th scope="col">Estado</th><th scope="col">Restante</th><th scope="col"><span class="sr-only">Acciones</span></th>
-        </tr></thead>
-        <tbody id="taskBody"></tbody>
-      </table>
-    </div>
-    <form id="addForm" class="row addrow" autocomplete="off">
-      <div class="field"><label for="addName">Nombre (opcional)</label><input id="addName" type="text" maxlength="20" style="width:130px"></div>
-      <div class="field"><label for="addSize">Tamaño (KB)</label><input id="addSize" type="number" min="1" step="1" required inputmode="numeric" style="width:110px"></div>
-      <div class="field"><label for="addBurst">Duración (u.t.)</label><input id="addBurst" type="number" min="1" max="999" step="1" value="3" required inputmode="numeric" style="width:100px"></div>
-      <button type="submit" class="btn primary">Agregar tarea</button>
-    </form>
-    <p class="err" id="addErr" role="alert"></p>
-    <div class="row tight">
-      <button type="button" class="btn small" id="ex1">Ejemplo S5</button>
-      <button type="button" class="btn small" id="ex2">Ejemplo con tarea rechazada</button>
-      <button type="button" class="btn small danger" id="clearAll">Vaciar tabla</button>
-    </div>
-  </section>
-
-  <!-- 3. Control -->
-  <section class="card" aria-labelledby="h-ctrl">
-    <h2 id="h-ctrl">3. Selector y ejecución</h2>
-    <div class="row">
-      <div class="field" style="flex:1 1 220px">
-        <label for="taskSelect">Selector de tareas</label>
-        <select id="taskSelect"></select>
+      <div class="clock"><span class="lbl">Tiempo</span><strong id="clock">0</strong><span class="lbl">u.t.</span></div>
+      <div class="tb-mode">
+        <span class="lbl" id="modeLbl">¿Quién carga las tareas?</span>
+        <div class="seg" role="radiogroup" aria-labelledby="modeLbl">
+          <label><input type="radio" name="mode" value="auto" autocomplete="off" checked><span>Automático</span></label>
+          <label><input type="radio" name="mode" value="manual" autocomplete="off"><span>Manual</span></label>
+        </div>
       </div>
-      <button type="button" class="btn" id="admitBtn">Admitir a la cola</button>
-      <button type="button" class="btn primary" id="loadBtn">Cargar en memoria</button>
-      <button type="button" class="btn" id="admitAllBtn">Admitir todas</button>
-    </div>
-    <p class="lbl" style="margin:14px 0 6px">Modo de planificación</p>
-    <div class="mode" role="radiogroup" aria-label="Modo de planificación">
-      <label><input type="radio" name="mode" value="auto" checked> Automático (primero en llegar, primero en ejecutarse)</label>
-      <label><input type="radio" name="mode" value="manual"> Manual (tú eliges con el selector)</label>
-    </div>
-    <div class="row" style="margin-top:14px">
-      <button type="button" class="btn primary" id="playBtn">Iniciar</button>
-      <button type="button" class="btn" id="stepBtn">Avanzar 1 u.t.</button>
-      <button type="button" class="btn" id="resetBtn">Reiniciar simulación</button>
-      <div class="field">
-        <label for="speed">Velocidad</label>
-        <input id="speed" type="range" min="1" max="5" step="1" value="3" style="min-height:0;padding:0">
+      <div class="tb-manual" id="manualBox" hidden>
+        <div class="field">
+          <label for="taskSelect">Tarea a cargar</label>
+          <select id="taskSelect"></select>
+        </div>
+        <button type="button" class="btn primary" id="loadBtn">Cargar en memoria</button>
+      </div>
+      <div class="now">
+        <span class="nowlbl">Ahora</span><span id="nowMsg"></span>
+        <span class="nowhelp" id="modeHelp"></span>
       </div>
     </div>
-  </section>
 
-</div>
-<div class="col">
-
-  <!-- 4. Memoria -->
-  <section class="card" aria-labelledby="h-mem">
-    <h2 id="h-mem">4. Mapa de la memoria</h2>
-    <div class="memwrap">
-      <div class="mem" id="memMap" role="group" aria-label="Mapa de memoria con direcciones en KB"></div>
-      <div>
-        <h3>Registros de protección</h3>
-        <dl class="kv">
-          <dt>Registro base</dt><dd id="iBase">—</dd>
-          <dt>Registro límite</dt><dd id="iLimit">—</dd>
-          <dt>Direcciones válidas</dt><dd id="iRange">—</dd>
-          <dt>Programa en memoria</dt><dd id="iProc">Ninguno</dd>
-          <dt>Fragmentación interna</dt><dd id="iFrag">—</dd>
-          <dt>Uso de la partición</dt><dd id="iUse">—</dd>
+    <div class="colL">
+      <section class="card c-config" aria-labelledby="h-ram">
+        <h2 id="h-ram">Memoria</h2>
+        <div class="row">
+          <div class="field">
+            <label for="ramVal">RAM</label>
+            <div class="inline">
+              <input id="ramVal" type="number" min="1" step="any" value="64" inputmode="decimal" style="width:96px">
+              <select id="ramUnit" aria-label="Unidad de la RAM">
+                <option value="KB" selected>KB</option><option value="MB">MB</option><option value="GB">GB</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="osVal">Tamaño del SO (KB)</label>
+            <input id="osVal" type="number" min="1" step="1" value="10" inputmode="numeric" style="width:96px">
+          </div>
+          <button type="button" class="btn" id="applyRec">Ajustar la RAM al mínimo</button>
+        </div>
+        <p class="err" id="cfgErr" role="alert"></p>
+        <p class="note" id="cfgLock" hidden>La RAM y el SO se bloquean mientras hay un programa en memoria.</p>
+        <dl class="stats wide">
+          <div class="stat" title="RAM menos SO: el espacio donde cabe un programa."><dt>Partición (RAM − SO)</dt><dd id="cUser">—</dd></div>
+          <div class="stat" title="La tarea más grande de la tabla."><dt>Tarea mayor</dt><dd id="cMax">—</dd></div>
+          <div class="stat" title="SO más tarea mayor. Con menos RAM, esa tarea no cabe."><dt>RAM mínima (SO + mayor)</dt><dd id="cMin">—</dd></div>
         </dl>
-        <p class="note">Un acceso fuera del rango válido genera una interrupción y el SO termina el programa.</p>
-      </div>
+        <p class="note" id="ramMsg" role="status"></p>
+      </section>
+
+      <section class="card c-tasks" aria-labelledby="h-tasks">
+        <div class="cardhead">
+          <h2 id="h-tasks">Tareas</h2>
+          <div class="row tight">
+            <button type="button" class="btn small" id="ex1">Ejemplo S5</button>
+            <button type="button" class="btn small" id="ex2">Ejemplo con rechazo</button>
+            <button type="button" class="btn small danger" id="clearAll">Vaciar tabla</button>
+          </div>
+        </div>
+        <div class="tablewrap grow">
+          <table>
+            <thead><tr>
+              <th scope="col" class="col-pick">Elegir</th><th scope="col">Tarea</th><th scope="col">Tamaño (KB)</th>
+              <th scope="col">Duración (u.t.)</th><th scope="col">Estado</th><th scope="col">Restante</th><th scope="col"><span class="sr-only">Acciones</span></th>
+            </tr></thead>
+            <tbody id="taskBody"></tbody>
+          </table>
+        </div>
+        <form id="addForm" class="row addrow" autocomplete="off">
+          <div class="field"><label for="addName">Nombre (opcional)</label><input id="addName" type="text" maxlength="20" style="width:110px"></div>
+          <div class="field"><label for="addSize">Tamaño (KB)</label><input id="addSize" type="number" min="1" step="1" required inputmode="numeric" style="width:90px"></div>
+          <div class="field"><label for="addBurst">Duración (u.t.)</label><input id="addBurst" type="number" min="1" max="999" step="1" value="3" required inputmode="numeric" style="width:90px"></div>
+          <button type="submit" class="btn primary">Agregar tarea</button>
+        </form>
+        <p class="err" id="addErr" role="alert"></p>
+      </section>
     </div>
-  </section>
 
-  <!-- 5. Estados -->
-  <section class="card" aria-labelledby="h-board">
-    <h2 id="h-board">5. Estados del proceso y cola de espera</h2>
-    <div class="board">
-      <div class="bcol"><h3>Nuevo</h3><ul id="lNuevo"></ul></div>
-      <div class="bcol"><h3>Listo (cola de espera)</h3><ul id="lListo"></ul></div>
-      <div class="bcol"><h3>En ejecución</h3><ul id="lRun"></ul></div>
-      <div class="bcol"><h3>Terminado / rechazado</h3><ul id="lDone"></ul></div>
+    <div class="colM">
+      <section class="card c-mem" aria-labelledby="h-mem">
+        <h2 id="h-mem">Mapa de la memoria</h2>
+        <div class="mem" id="memMap" role="group" aria-label="Mapa de memoria con direcciones en KB"></div>
+        <dl class="kv">
+          <div><dt>Registro base</dt><dd id="iBase">—</dd></div>
+          <div><dt>Registro límite</dt><dd id="iLimit">—</dd></div>
+          <div><dt>Direcciones válidas</dt><dd id="iRange">—</dd></div>
+          <div><dt>Programa</dt><dd id="iProc">Ninguno</dd></div>
+          <div><dt>Fragmentación interna</dt><dd id="iFrag">—</dd></div>
+          <div><dt>Uso de la partición</dt><dd id="iUse">—</dd></div>
+        </dl>
+      </section>
     </div>
-  </section>
 
-  <!-- 6. Métricas -->
-  <section class="card" aria-labelledby="h-met">
-    <h2 id="h-met">6. Métricas</h2>
-    <dl class="stats" style="margin-top:0">
-      <div class="stat"><dt>Tiempo</dt><dd id="mTime">0 u.t.</dd></div>
-      <div class="stat"><dt>Terminadas</dt><dd id="mDone">0 / 0</dd></div>
-      <div class="stat"><dt>Rechazadas</dt><dd id="mRej">0</dd></div>
-      <div class="stat"><dt>Espera promedio</dt><dd id="mWait">—</dd></div>
-      <div class="stat"><dt>Retorno promedio</dt><dd id="mTurn">—</dd></div>
-      <div class="stat"><dt>RAM ocupada</dt><dd id="mUse">—</dd></div>
-    </dl>
-  </section>
+    <div class="colR">
+      <section class="card c-board" aria-labelledby="h-board">
+        <h2 id="h-board">Estado de las tareas</h2>
+        <div class="brow"><div class="bhead"><h3>Nuevo</h3><p class="cdesc">Aún no pide memoria.</p></div><ul id="lNuevo"></ul></div>
+        <div class="brow"><div class="bhead"><h3>Listo</h3><p class="cdesc">Cola de espera: aguarda memoria libre.</p></div><ul id="lListo"></ul></div>
+        <div class="brow"><div class="bhead"><h3>En ejecución</h3><p class="cdesc">En memoria, usa el procesador.</p></div><ul id="lRun"></ul></div>
+        <div class="brow"><div class="bhead"><h3>Terminado</h3><p class="cdesc">Liberó la memoria, o no cabía (rechazada).</p></div><ul id="lDone"></ul></div>
+      </section>
 
-  <!-- 7. Bitácora -->
-  <section class="card" aria-labelledby="h-log">
-    <h2 id="h-log">7. Bitácora</h2>
-    <ol id="logList" role="log" aria-live="polite" aria-label="Eventos de la simulación"></ol>
-  </section>
+      <section class="card c-res" aria-labelledby="h-met">
+        <h2 id="h-met">Resultados</h2>
+        <dl class="stats compact">
+          <div class="stat"><dt>Tiempo</dt><dd id="mTime">0 u.t.</dd></div>
+          <div class="stat"><dt>Terminadas</dt><dd id="mDone">0 / 0</dd></div>
+          <div class="stat"><dt>Rechazadas</dt><dd id="mRej">0</dd></div>
+          <div class="stat"><dt>Espera promedio</dt><dd id="mWait">—</dd></div>
+          <div class="stat"><dt>Retorno promedio</dt><dd id="mTurn">—</dd></div>
+          <div class="stat"><dt>RAM ocupada</dt><dd id="mUse">—</dd></div>
+        </dl>
+      </section>
+
+      <section class="card c-log" aria-labelledby="h-log">
+        <h2 id="h-log">Bitácora: qué pasa y por qué</h2>
+        <ol id="logList" role="log" aria-live="polite" aria-label="Eventos de la simulación"></ol>
+      </section>
+    </div>
+
+  </div>
+</section>
 
 </div>
-</div>
-<footer>Simulador didáctico. u.t. = unidades de tiempo. Las tareas se atienden por orden de llegada a la cola.</footer>
+</main>
 </div>
 
 <script>
@@ -325,12 +597,13 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
   var UNITS = { KB: 1, MB: 1024, GB: 1048576 };
   var HUES = [212, 152, 282, 22, 340, 182, 252, 112];
   var LABEL = { nuevo: 'Nuevo', listo: 'Listo (en cola)', ejecucion: 'En ejecución', terminado: 'Terminado', rechazado: 'Rechazada' };
-  var SPEEDS = [1500, 1000, 700, 400, 200];
+  var SPEEDS = [3000, 2000, 1200, 700, 400];
 
   var S = { ramKB: 64, osKB: 10, tasks: [], queue: [], running: null, time: 0,
             mode: 'auto', timer: null, selected: null, log: [], seq: 0, uid: 0 };
   var rows = new Map();
   var selSig = '';
+  var lastRunId = null;
 
   /* ---------- utilidades (todo el contenido de usuario entra por textContent) ---------- */
   function el(tag, props) {
@@ -426,10 +699,10 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
   }
 
   function step() {
-    if (S.running === null && S.mode === 'auto' && !S.queue.length) {
+    if (S.mode === 'auto') {
       var nuevos = S.tasks.filter(function (t) { return t.status === 'nuevo'; });
       if (nuevos.length) {
-        log('Modo automático: se admiten las tareas nuevas a la cola, en orden de la tabla.', 'info');
+        log('El SO pone las tareas nuevas en la cola de espera (Listo), en el orden de la tabla.', 'info');
         nuevos.forEach(admit);
       }
     }
@@ -457,7 +730,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
 
   function play() {
     if (S.timer) return;
-    S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 700);
+    S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 2000);
     renderControls();
     step();
   }
@@ -515,28 +788,24 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     var ua = userArea();
     var has = S.tasks.length > 0;
     var max = S.tasks.reduce(function (m, t) { return Math.max(m, t.size); }, 0);
-    var sum = S.tasks.reduce(function (s, t) { return s + t.size; }, 0);
     var min = S.osKB + max;
-    var rec = 8; while (rec < min) rec *= 2;
     $('cUser').textContent = fmt(ua);
     $('cMax').textContent = has ? fmt(max) : '—';
     $('cMin').textContent = has ? fmt(min) : '—';
-    $('cRec').textContent = has ? (rec > MAX_KB ? 'Más de 64 GB' : fmt(rec)) : '—';
-    $('cSum').textContent = has ? fmt(sum) : '—';
     var m = $('ramMsg');
-    if (!has) { m.className = 'note'; m.textContent = 'Agrega tareas para calcular la RAM que necesitas.'; }
+    if (!has) { m.className = 'note'; m.textContent = 'Agrega tareas para saber cuánta RAM necesitas.'; }
     else if (S.ramKB < min) {
       m.className = 'note warn';
-      m.textContent = 'La RAM actual (' + fmt(S.ramKB) + ') no alcanza: el SO (' + fmt(S.osKB) + ') más la tarea mayor (' + fmt(max) + ') necesitan al menos ' + fmt(min) + '.';
+      m.textContent = 'Con ' + fmt(S.ramKB) + ' de RAM, la tarea mayor (' + fmt(max) + ') no cabe: el SO (' + fmt(S.osKB) + ') más esa tarea necesitan al menos ' + fmt(min) + '. Esa tarea será rechazada.';
     } else {
       m.className = 'note ok';
-      m.textContent = 'La RAM actual alcanza para ejecutar todas las tareas, una a la vez. Sobran ' + fmt(S.ramKB - min) + ' sobre el mínimo.';
+      m.textContent = 'La RAM alcanza: la tarea mayor (' + fmt(max) + ') cabe en la partición (' + fmt(ua) + '). Se ejecutan una por una, no importa cuánto sumen.';
     }
     var locked = S.running !== null;
     ['ramVal', 'ramUnit', 'osVal'].forEach(function (id) { $(id).disabled = locked; });
     $('cfgLock').hidden = !locked;
-    $('applyRec').disabled = locked || !has || rec > MAX_KB || rec === S.ramKB;
-    $('applyRec').dataset.rec = String(rec);
+    $('applyRec').disabled = locked || !has || min > MAX_KB || min === S.ramKB;
+    $('applyRec').dataset.rec = String(min);
   }
 
   function updateRow(t) {
@@ -573,7 +842,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     var badge = el('span', { class: 'badge' });
     var rem = el('span', { class: 'rem' });
     var hint = el('span', { class: 'hint' });
-    var del = el('button', { type: 'button', class: 'btn small danger', text: 'Quitar', 'aria-label': 'Quitar la tarea ' + (i + 1),
+    var del = el('button', { type: 'button', class: 'btn small icon danger', text: '×', title: 'Quitar tarea', 'aria-label': 'Quitar la tarea ' + (i + 1),
       onclick: function () {
         S.tasks = S.tasks.filter(function (x) { return x !== t; });
         S.queue = S.queue.filter(function (id) { return id !== t.id; });
@@ -582,7 +851,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
         renderAll();
       } });
     var tr = el('tr', {},
-      el('td', {}, radio),
+      el('td', { class: 'col-pick' }, radio),
       el('td', {}, el('div', { class: 'namecell' }, el('span', { class: 'dot', vars: { '--h': t.hue } }), nameIn)),
       el('td', {}, sizeIn, hint),
       el('td', {}, burstIn),
@@ -619,25 +888,25 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     sel.value = S.selected == null ? '' : String(S.selected);
     rows.forEach(function (r, id) { r.radio.checked = id === S.selected; });
     var t = S.selected != null ? byId(S.selected) : null;
-    $('admitBtn').disabled = !t || t.status !== 'nuevo';
     $('loadBtn').disabled = !t;
-    $('admitAllBtn').disabled = !S.tasks.some(function (x) { return x.status === 'nuevo'; });
   }
 
   function renderMemory() {
     var map = $('memMap');
     map.replaceChildren();
     var run = S.running !== null ? byId(S.running) : null;
+    var isNew = !!run && run.id !== lastRunId;
+    lastRunId = run ? run.id : null;
     var u = userArea();
     var segs = [{ cls: 'so', title: 'Sistema operativo', sub: fmt(S.osKB), size: S.osKB, start: 0 }];
     if (run) {
-      segs.push({ cls: 'proc', title: run.name, sub: fmt(run.size) + ' · programa de usuario', size: run.size, start: S.osKB, hue: run.hue });
+      segs.push({ cls: 'proc', title: run.name, sub: fmt(run.size) + ' · ' + (run.burst - run.remaining) + ' de ' + run.burst + ' u.t.', size: run.size, start: S.osKB, hue: run.hue });
       if (u - run.size > 0) segs.push({ cls: 'frag', title: 'Fragmentación interna', sub: fmt(u - run.size) + ' libres, no aprovechables', size: u - run.size, start: S.osKB + run.size });
     } else {
       segs.push({ cls: 'free', title: 'Partición de usuario libre', sub: fmt(u), size: u, start: S.osKB });
     }
     segs.forEach(function (s) {
-      var blk = el('div', { class: 'blk ' + s.cls, vars: s.hue != null ? { '--h': s.hue } : null },
+      var blk = el('div', { class: 'blk ' + s.cls + (s.cls === 'proc' && isNew ? ' enter' : ''), vars: s.hue != null ? { '--h': s.hue } : null },
         el('strong', { text: s.title }), el('span', { class: 'bsub', text: s.sub }));
       var row = el('div', { class: 'seg-row' }, el('div', { class: 'addr', text: fmt(s.start) }), blk);
       row.style.flexGrow = String(s.size);
@@ -690,6 +959,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     var avg = function (a) { return a.length ? num(a.reduce(function (x, y) { return x + y; }, 0) / a.length) + ' u.t.' : '—'; };
     var run = S.running !== null ? byId(S.running) : null;
     $('mTime').textContent = S.time + ' u.t.';
+    $('clock').textContent = String(S.time);
     $('mDone').textContent = done.length + ' / ' + S.tasks.length;
     $('mRej').textContent = String(S.tasks.filter(function (t) { return t.status === 'rechazado'; }).length);
     $('mWait').textContent = avg(done.map(function (t) { return t.startT - t.admitT; }));
@@ -703,11 +973,19 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     S.log.slice(-100).reverse().forEach(function (e) {
       ol.append(el('li', { class: 'log ' + e.kind }, el('span', { class: 'lt', text: 't=' + e.t }), el('span', { class: 'lm', text: e.msg })));
     });
+    var last = S.log[S.log.length - 1];
+    $('nowMsg').textContent = last ? last.msg : '';
   }
 
   function renderControls() {
     $('playBtn').textContent = S.timer ? 'Pausar' : 'Iniciar';
     $('playBtn').setAttribute('aria-pressed', String(!!S.timer));
+    var manual = S.mode === 'manual';
+    $('manualBox').hidden = !manual;
+    document.body.classList.toggle('is-auto', !manual);
+    $('modeHelp').textContent = manual
+      ? 'Elige una tarea y pulsa «Cargar en memoria».'
+      : 'El SO carga las tareas por orden de llegada.';
   }
 
   function renderDynamic() {
@@ -719,7 +997,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     renderConfig(); renderTasks(); renderSelect(); renderMemory(); renderBoard(); renderMetrics(); renderLog(); renderControls();
   }
 
-  /* ---------- eventos ---------- */
+  /* ---------- eventos del simulador ---------- */
   $('ramVal').addEventListener('input', applyConfig);
   $('ramUnit').addEventListener('change', applyConfig);
   $('osVal').addEventListener('input', applyConfig);
@@ -760,19 +1038,14 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
     S.selected = $('taskSelect').value ? Number($('taskSelect').value) : null;
     renderSelect();
   });
-  $('admitBtn').addEventListener('click', function () { admit(byId(S.selected)); renderDynamic(); });
   $('loadBtn').addEventListener('click', function () { load(byId(S.selected)); renderDynamic(); });
-  $('admitAllBtn').addEventListener('click', function () {
-    S.tasks.filter(function (t) { return t.status === 'nuevo'; }).forEach(admit);
-    renderDynamic();
-  });
 
   document.querySelectorAll('input[name="mode"]').forEach(function (r) {
     r.addEventListener('change', function () {
       if (!r.checked) return;
       S.mode = r.value;
-      log(r.value === 'auto' ? 'Modo automático: el SO carga la siguiente tarea de la cola al liberar la memoria.' : 'Modo manual: tú eliges qué tarea cargar con el selector.', 'info');
-      renderLog();
+      log(r.value === 'auto' ? 'Modo automático: el SO carga la siguiente tarea de la cola cuando se libera la memoria.' : 'Modo manual: tú eliges con el selector qué tarea se carga.', 'info');
+      renderDynamic();
     });
   });
 
@@ -780,26 +1053,151 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:8px}
   $('stepBtn').addEventListener('click', function () { step(); });
   $('resetBtn').addEventListener('click', resetSim);
   $('speed').addEventListener('input', function () {
-    if (S.timer) { clearInterval(S.timer); S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 700); }
+    if (S.timer) { clearInterval(S.timer); S.timer = setInterval(step, SPEEDS[Number($('speed').value) - 1] || 2000); }
   });
 
-  /* ---------- tema (inicia en claro) ---------- */
-  function setTheme(t, save) {
-    document.documentElement.setAttribute('data-theme', t);
+  /* ---------- animación de la portada (solo decorativa) ---------- */
+  var CV = (function () {
+    var RAM = 64, SO = 10, USER = RAM - SO;
+    var TASKS = [
+      { n: 'A', kb: 8, t: 4, h: 212 }, { n: 'B', kb: 15, t: 3, h: 160 },
+      { n: 'C', kb: 18, t: 5, h: 24 }, { n: 'D', kb: 6, t: 2, h: 280 }
+    ];
+    var MS_UT = 900, ENTER = 1400, LEAVE = 1300, GAP = 1200;
+    var reduce = false;
+    try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { reduce = false; }
+    var timer = null, active = false, i = 0;
+
+    function later(fn, ms) { timer = setTimeout(fn, ms); }
+    function setMem(k) {
+      var prog = $('cvProg'), track = $('cvTrack'), tick = $('cvTick');
+      if (k < 0) {
+        prog.style.flexBasis = '0%'; prog.classList.add('gone'); track.classList.remove('has-prog');
+        $('cvFreeT').textContent = 'Partición de usuario libre'; $('cvFreeS').textContent = USER + ' KB disponibles';
+        tick.style.opacity = '0'; return;
+      }
+      var t = TASKS[k];
+      $('cvName').textContent = t.n; $('cvSize').textContent = t.kb + ' KB';
+      prog.style.flexBasis = (t.kb / RAM * 100) + '%'; prog.classList.remove('gone'); track.classList.add('has-prog');
+      $('cvFreeT').textContent = 'Fragmentación interna'; $('cvFreeS').textContent = (USER - t.kb) + ' KB sin usar';
+      tick.textContent = (SO + t.kb) + ' KB'; tick.style.left = ((SO + t.kb) / RAM * 100) + '%'; tick.style.opacity = '1';
+    }
+    function fillBar(ms) {
+      var f = $('cvFill');
+      f.style.transition = 'width 0s linear'; f.style.width = '0';
+      if (!ms) return;
+      void f.offsetWidth;
+      f.style.transition = 'width ' + ms + 'ms linear'; f.style.width = '100%';
+    }
+    function cycle() {                       // entra -> se llena -> sale -> siguiente
+      if (!active) return;
+      var t = TASKS[i];
+      setMem(i); fillBar(0);
+      later(function () {
+        fillBar(t.t * MS_UT);
+        later(function () {
+          setMem(-1); fillBar(0);
+          i = (i + 1) % TASKS.length;
+          later(cycle, LEAVE + GAP);
+        }, t.t * MS_UT + 300);
+      }, ENTER);
+    }
+    return {
+      setActive: function (on) {
+        if (on === active) return;
+        active = on; clearTimeout(timer); timer = null;
+        if (!on) return;
+        i = 0;
+        if (reduce) { setMem(0); fillBar(0); $('cvFill').style.width = '55%'; return; }   // sin movimiento
+        setMem(-1); fillBar(0); later(cycle, 900);
+      }
+    };
+  })();
+
+  /* ---------- diapositivas ---------- */
+  var SLIDES = ['portada', 'teoria', 'simulador'];
+  var slideEls = SLIDES.map(function (n) { return $('s-' + n); });
+  var cur = -1;
+
+  function go(i, opts) {
+    opts = opts || {};
+    i = Math.max(0, Math.min(SLIDES.length - 1, i));
+    var changed = i !== cur;
+    cur = i;
+    $('track').style.transform = 'translateX(' + (-100 * i) + '%)';
+    slideEls.forEach(function (s, k) {
+      if (k === i) { s.removeAttribute('inert'); s.removeAttribute('aria-hidden'); }
+      else { s.setAttribute('inert', ''); s.setAttribute('aria-hidden', 'true'); }
+    });
+    document.querySelectorAll('.tabs button').forEach(function (b, k) {
+      if (k === i) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    CV.setActive(i === 0);
+    if (!opts.fromHash) {
+      try { if (location.hash !== '#' + SLIDES[i]) location.hash = SLIDES[i]; } catch (e) { /* sin hash */ }
+    }
+    if (changed && !opts.silent) { try { slideEls[i].focus({ preventScroll: true }); } catch (e) { /* sin foco */ } }
+  }
+
+  document.querySelectorAll('[data-go]').forEach(function (b) {
+    b.addEventListener('click', function (e) { e.stopPropagation(); go(Number(b.getAttribute('data-go'))); });
+  });
+
+  function hasSelection() { try { return String(window.getSelection()).length > 0; } catch (e) { return false; } }
+  slideEls[0].addEventListener('click', function (e) {
+    if (e.target.closest('a,button,input,select,textarea,label') || hasSelection()) return;
+    go(cur + 1);
+  });
+  slideEls[1].addEventListener('click', function (e) {
+    if (!e.target.hasAttribute || !e.target.hasAttribute('data-bg') || hasSelection()) return;
+    go(cur + 1);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    var t = e.target, tag = t && t.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    if (e.key === 'ArrowRight') { go(cur + 1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { go(cur - 1); e.preventDefault(); }
+  });
+
+  var tx = null, ty = null;
+  var deckEl = document.querySelector('.deck');
+  deckEl.addEventListener('touchstart', function (e) {
+    if (cur > 1 || e.touches.length !== 1) { tx = null; return; }
+    tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+  }, { passive: true });
+  deckEl.addEventListener('touchend', function (e) {
+    if (tx === null) return;
+    var dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    tx = null;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 40) go(dx < 0 ? cur + 1 : cur - 1);
+  }, { passive: true });
+
+  window.addEventListener('hashchange', function () {
+    var k = SLIDES.indexOf(location.hash.slice(1));
+    if (k >= 0) go(k, { fromHash: true });
+  });
+
+  /* ---------- tema (siempre inicia en claro; "Oscuro" dura solo la sesión de la página) ---------- */
+  function setTheme(t) {
+    document.documentElement.setAttribute('data-sim-theme', t);
     document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
       b.setAttribute('aria-pressed', String(b.getAttribute('data-theme-btn') === t));
     });
-    if (save) { try { localStorage.setItem('sim-contigua-tema', t); } catch (e) { /* sin almacenamiento */ } }
   }
   document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
-    b.addEventListener('click', function () { setTheme(b.getAttribute('data-theme-btn'), true); });
+    b.addEventListener('click', function () { setTheme(b.getAttribute('data-theme-btn')); });
   });
-  var saved = null;
-  try { saved = localStorage.getItem('sim-contigua-tema'); } catch (e) { saved = null; }
-  setTheme(saved === 'dark' ? 'dark' : 'light', false);
+  setTheme('light');
 
+  /* ---------- arranque ---------- */
   loadExample('s5');
+  go(Math.max(0, SLIDES.indexOf(location.hash.slice(1))), { fromHash: true, silent: true });
+  requestAnimationFrame(function () { $('track').classList.add('anim'); });
 })();
 </script>
 </body>
 </html>
+
+</body></html>
